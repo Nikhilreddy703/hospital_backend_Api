@@ -1,0 +1,50 @@
+module.exports = {
+  info: {
+    name: 'CityCare Demo Hospital',
+    type: 'Multi-speciality hospital (fictional)',
+    established: 2005,
+    beds: 350,
+    description: 'A fictional hospital used only for chatbot and API demos.',
+    address: {
+      line1: 'Block A, 1 Demo Street',
+      city: 'Demo City',
+      state: 'Demo State',
+      pincode: '000000',
+      country: 'India',
+    },
+  },
+  workingHours: {
+    outpatient: { days: 'Monday to Saturday', hours: '09:00 AM - 05:00 PM' },
+    sunday: 'Closed for outpatient visits (emergency services only)',
+    laboratory: '07:00 AM - 08:00 PM',
+    pharmacy: 'Open 24x7',
+    visitingHours: '04:00 PM - 06:00 PM',
+  },
+  emergency: {
+    available24x7: true,
+    emergencyHelpline: '1800-000-0000',
+    ambulance: '1800-000-0001',
+    location: 'Block A, Ground Floor (Emergency Entrance)',
+    instructions: [
+      'For life-threatening situations, go to the Emergency Entrance immediately.',
+      'Call the ambulance number for transport assistance.',
+      'This is a demo hospital: the numbers above are fictional.',
+    ],
+  },
+  contact: {
+    mainPhone: '+91-00000-00001',
+    appointmentHelpdesk: '+91-00000-00002',
+    email: 'care@citycare-demo.example',
+    website: 'https://citycare-demo.example',
+  },
+  departments: [
+    { name: 'Heart & Vascular', floor: 'Block A, Floor 1', description: 'Diagnosis and treatment of heart and blood-vessel conditions.' },
+    { name: 'Bone & Joint', floor: 'Block A, Floor 2', description: 'Orthopedic care for bones, joints and sports injuries.' },
+    { name: 'Skin Care', floor: 'Block A, Floor 2', description: 'Dermatology and cosmetic skin care.' },
+    { name: 'Neurosciences', floor: 'Block B, Floor 1', description: 'Brain, spine and nervous-system care.' },
+    { name: 'Women & Child Care', floor: 'Block B, Floor 2', description: 'Gynecology, maternity and pediatric services.' },
+    { name: 'Internal Medicine', floor: 'Block A, Floor 3', description: 'General medicine and digestive-system care.' },
+    { name: 'ENT', floor: 'Block B, Floor 3', description: 'Ear, nose and throat care.' },
+    { name: 'Eye Care', floor: 'Block B, Floor 3', description: 'Eye examinations and ophthalmology services.' },
+  ],
+};

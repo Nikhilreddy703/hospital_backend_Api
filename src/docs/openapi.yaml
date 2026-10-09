@@ -1,0 +1,611 @@
+openapi: 3.0.3
+info:
+  title: Hospital Appointment Management - Mock API
+  version: 1.0.0
+  description: |
+    **Demo only.** A mock backend for a hospital appointment application. All doctors, patients and
+    appointments are fictional. No real hospital, payment or healthcare systems are used.
+
+    Designed to be consumed by an Artmies/XO chatbot through REST only.
+
+    **Conventions**
+    - Every response contains `success` (`true` / `false`).
+    - Errors always look like `{ "success": false, "errorCode": "...", "message": "..." }`.
+    - Dates are `YYYY-MM-DD`. Times are shown as `10:30 AM`.
+    - Seed data: 12 doctors, slots for 2026-10-07 to 2026-10-20 (no Sundays), 5 patients (`PAT001`-`PAT005`), 6 appointments.
+    - Try it: doctor `DOC001`, date `2026-10-10`, slot `S0026` (10:30 AM), patient `PAT001`.
+servers:
+  - url: http://localhost:3000
+    description: Local development
+tags:
+  - { name: Doctors, description: Doctor search and details }
+  - { name: Slots, description: Doctor availability }
+  - { name: Patients, description: Mock patient records }
+  - { name: Appointments, description: Book, view, cancel and reschedule }
+  - { name: Hospital, description: Static hospital information }
+  - { name: System, description: Health and demo utilities }
+
+paths:
+  /api/doctors:
+    get:
+      tags: [Doctors]
+      summary: Get all doctors / search doctors
+      operationId: listDoctors
+      parameters:
+        - { name: specialization, in: query, description: Case-insensitive specialization, schema: { type: string, example: Cardiology } }
+        - { name: department, in: query, description: Case-insensitive department, schema: { type: string, example: Heart & Vascular } }
+        - { name: available, in: query, description: Only doctors whose status is AVAILABLE, schema: { type: boolean } }
+        - { name: name, in: query, description: Partial doctor name, schema: { type: string, example: sharma } }
+      responses:
+        '200':
+          description: List of doctors
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean, example: true }
+                  count: { type: integer, example: 2 }
+                  doctors: { type: array, items: { $ref: '#/components/schemas/Doctor' } }
+        '400':
+          description: Invalid specialization or department
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              example:
+                success: false
+                errorCode: INVALID_SPECIALIZATION
+                message: '"Astrology" is not a valid specialization.'
+                details: { validSpecializations: [Cardiology, Dermatology, ENT] }
+
+  /api/doctors/{id}:
+    get:
+      tags: [Doctors]
+      summary: Get doctor by ID
+      operationId: getDoctor
+      parameters: [{ $ref: '#/components/parameters/DoctorId' }]
+      responses:
+        '200':
+          description: Doctor details
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean, example: true }
+                  doctor: { $ref: '#/components/schemas/Doctor' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/doctors/{id}/slots:
+    get:
+      tags: [Slots]
+      summary: Get available slots for a doctor
+      description: Returns only slots with status AVAILABLE. Omit `date` to get slots for all dates.
+      operationId: getDoctorSlots
+      parameters:
+        - { $ref: '#/components/parameters/DoctorId' }
+        - { name: date, in: query, description: Filter by date (YYYY-MM-DD), schema: { type: string, format: date, example: '2026-10-10' } }
+      responses:
+        '200':
+          description: Available slots
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SlotList' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/doctors/{id}/available-dates:
+    get:
+      tags: [Slots]
+      summary: Get dates on which a doctor has free slots
+      operationId: getDoctorAvailableDates
+      parameters: [{ $ref: '#/components/parameters/DoctorId' }]
+      responses:
+        '200':
+          description: Dates with the number of free slots
+          content:
+            application/json:
+              example:
+                success: true
+                doctorId: DOC001
+                doctorName: Dr. Rahul Sharma
+                specialization: Cardiology
+                availableDates:
+                  - { date: '2026-10-07', availableSlots: 8 }
+                  - { date: '2026-10-08', availableSlots: 8 }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/specializations:
+    get:
+      tags: [Doctors]
+      summary: List specializations
+      operationId: listSpecializations
+      responses:
+        '200':
+          description: Specializations with doctor counts
+          content:
+            application/json:
+              example:
+                success: true
+                count: 2
+                specializations:
+                  - { name: Cardiology, doctorCount: 2 }
+                  - { name: Dermatology, doctorCount: 1 }
+
+  /api/departments:
+    get:
+      tags: [Doctors]
+      summary: List departments that have doctors
+      operationId: listDoctorDepartments
+      responses:
+        '200':
+          description: Departments with doctor counts
+          content:
+            application/json:
+              example:
+                success: true
+                count: 1
+                departments:
+                  - { name: Heart & Vascular, doctorCount: 2 }
+
+  /api/patients:
+    post:
+      tags: [Patients]
+      summary: Create patient
+      operationId: createPatient
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PatientInput' }
+            example: { name: Neha Demo, age: 30, gender: FEMALE, phone: '9000000099', email: neha.demo@example.test }
+      responses:
+        '201':
+          description: Patient created
+          content:
+            application/json:
+              example:
+                success: true
+                message: Patient created successfully.
+                patient: { patientId: PAT006, name: Neha Demo, age: 30, gender: FEMALE, phone: '9000000099', email: neha.demo@example.test, createdAt: '2026-10-06T14:00:00.000Z', updatedAt: '2026-10-06T14:00:00.000Z' }
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              example:
+                success: false
+                errorCode: VALIDATION_ERROR
+                message: Request validation failed.
+                details: [{ field: phone, message: phone is required and must be a 10-digit string. }]
+    get:
+      tags: [Patients]
+      summary: List patients (optionally by phone)
+      operationId: listPatients
+      parameters:
+        - { name: phone, in: query, description: Exact 10-digit phone number, schema: { type: string, example: '9000000001' } }
+      responses:
+        '200':
+          description: Matching patients
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  count: { type: integer }
+                  patients: { type: array, items: { $ref: '#/components/schemas/Patient' } }
+
+  /api/patients/{id}:
+    get:
+      tags: [Patients]
+      summary: Get patient by patient ID
+      operationId: getPatient
+      parameters: [{ $ref: '#/components/parameters/PatientId' }]
+      responses:
+        '200':
+          description: Patient details
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean, example: true }
+                  patient: { $ref: '#/components/schemas/Patient' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [Patients]
+      summary: Update patient details (send only the fields to change)
+      operationId: updatePatient
+      parameters: [{ $ref: '#/components/parameters/PatientId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PatientInput' }
+            example: { phone: '9111111111', age: 35 }
+      responses:
+        '200':
+          description: Updated patient
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean, example: true }
+                  message: { type: string }
+                  patient: { $ref: '#/components/schemas/Patient' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/patients/{id}/appointments:
+    get:
+      tags: [Appointments]
+      summary: Get a patient's appointments
+      operationId: getPatientAppointments
+      parameters:
+        - { $ref: '#/components/parameters/PatientId' }
+        - { name: status, in: query, schema: { type: string, enum: [CONFIRMED, CANCELLED] } }
+      responses:
+        '200':
+          description: Appointments sorted by date and time
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean, example: true }
+                  patientId: { type: string, example: PAT001 }
+                  count: { type: integer }
+                  appointments: { type: array, items: { $ref: '#/components/schemas/Appointment' } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/patients/{id}/context:
+    get:
+      tags: [Patients]
+      summary: Patient + appointment context (for future human-agent handoff / agent assist)
+      operationId: getPatientContext
+      parameters: [{ $ref: '#/components/parameters/PatientId' }]
+      responses:
+        '200':
+          description: Patient with confirmed and cancelled appointments
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  patient: { $ref: '#/components/schemas/Patient' }
+                  confirmedAppointments: { type: array, items: { $ref: '#/components/schemas/Appointment' } }
+                  cancelledAppointments: { type: array, items: { $ref: '#/components/schemas/Appointment' } }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/appointments:
+    post:
+      tags: [Appointments]
+      summary: Book an appointment (slot AVAILABLE -> BOOKED)
+      description: Validates that the doctor and patient exist, the slot belongs to the doctor and is still available.
+      operationId: bookAppointment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BookingRequest' }
+            example: { patientId: PAT001, doctorId: DOC001, slotId: S0026, reason: Chest discomfort }
+      responses:
+        '201':
+          description: Appointment confirmed
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Appointment' }
+              example:
+                success: true
+                message: Appointment booked successfully.
+                appointmentId: APT10007
+                status: CONFIRMED
+                patientId: PAT001
+                patientName: Aarav Demo
+                doctorId: DOC001
+                doctor: Dr. Rahul Sharma
+                specialization: Cardiology
+                hospital: CityCare Demo Hospital
+                location: 'Block A, Floor 1, Room 101'
+                slotId: S0026
+                date: '2026-10-10'
+                time: 10:30 AM
+                reason: Chest discomfort
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404':
+          description: Doctor, patient or slot not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              examples:
+                doctor: { value: { success: false, errorCode: DOCTOR_NOT_FOUND, message: Doctor with ID DOC999 was not found. } }
+                patient: { value: { success: false, errorCode: PATIENT_NOT_FOUND, message: Patient with ID PAT999 was not found. } }
+                slot: { value: { success: false, errorCode: SLOT_NOT_FOUND, message: Slot S9999 was not found for doctor DOC001. } }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /api/appointments/{id}:
+    get:
+      tags: [Appointments]
+      summary: Get appointment by ID
+      operationId: getAppointment
+      parameters: [{ $ref: '#/components/parameters/AppointmentId' }]
+      responses:
+        '200':
+          description: Appointment details
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Appointment' }
+        '400':
+          description: Malformed appointment ID
+          content:
+            application/json:
+              example: { success: false, errorCode: INVALID_APPOINTMENT, message: '"XYZ" is not a valid appointment ID. Expected a format like APT10001.' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [Appointments]
+      summary: Cancel appointment (slot BOOKED -> AVAILABLE)
+      operationId: cancelAppointment
+      parameters:
+        - { $ref: '#/components/parameters/AppointmentId' }
+        - { name: reason, in: query, description: Optional cancellation reason, schema: { type: string, example: Schedule conflict } }
+      responses:
+        '200':
+          description: Appointment cancelled
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Appointment' }
+              example:
+                success: true
+                message: Appointment cancelled successfully.
+                appointmentId: APT10001
+                status: CANCELLED
+                cancellationReason: Schedule conflict
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: Already cancelled
+          content:
+            application/json:
+              example: { success: false, errorCode: APPOINTMENT_ALREADY_CANCELLED, message: Appointment APT10001 has already been cancelled. }
+
+  /api/appointments/{id}/status:
+    get:
+      tags: [Appointments]
+      summary: Check appointment status
+      operationId: getAppointmentStatus
+      parameters: [{ $ref: '#/components/parameters/AppointmentId' }]
+      responses:
+        '200':
+          description: Status summary
+          content:
+            application/json:
+              example:
+                success: true
+                appointmentId: APT10001
+                status: CONFIRMED
+                doctor: Dr. Rahul Sharma
+                specialization: Cardiology
+                date: '2026-10-09'
+                time: 10:30 AM
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/appointments/{id}/reschedule:
+    put:
+      tags: [Appointments]
+      summary: Reschedule appointment
+      description: Validates the new slot, releases the old slot, books the new slot and updates the appointment. `doctorId` is optional (defaults to the current doctor).
+      operationId: rescheduleAppointment
+      parameters: [{ $ref: '#/components/parameters/AppointmentId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RescheduleRequest' }
+            example: { slotId: S0027 }
+      responses:
+        '200':
+          description: Appointment rescheduled
+          content:
+            application/json:
+              example:
+                success: true
+                message: Appointment rescheduled successfully.
+                appointmentId: APT10001
+                status: CONFIRMED
+                doctor: Dr. Rahul Sharma
+                date: '2026-10-10'
+                time: 11:00 AM
+                rescheduledFrom: { slotId: S0018, doctorId: DOC001, date: '2026-10-09', time: 10:30 AM }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /api/hospital:
+    get:
+      tags: [Hospital]
+      summary: Hospital information
+      operationId: getHospital
+      responses:
+        '200': { description: Hospital info, content: { application/json: { example: { success: true, hospital: { name: CityCare Demo Hospital, beds: 350 } } } } }
+  /api/hospital/departments:
+    get:
+      tags: [Hospital]
+      summary: Hospital departments
+      operationId: getHospitalDepartments
+      responses:
+        '200': { description: Departments with floors, doctor counts and specializations }
+  /api/hospital/working-hours:
+    get:
+      tags: [Hospital]
+      summary: Hospital working hours
+      operationId: getWorkingHours
+      responses:
+        '200': { description: Working hours }
+  /api/hospital/emergency:
+    get:
+      tags: [Hospital]
+      summary: Emergency information
+      operationId: getEmergencyInfo
+      responses:
+        '200': { description: Emergency numbers and instructions (fictional) }
+  /api/hospital/contact:
+    get:
+      tags: [Hospital]
+      summary: Contact information
+      operationId: getContactInfo
+      responses:
+        '200': { description: Phone, email and website (fictional) }
+  /api/hospital/doctors:
+    get:
+      tags: [Hospital]
+      summary: Doctor information (alias of GET /api/doctors)
+      operationId: getHospitalDoctors
+      responses:
+        '200': { description: Same response as GET /api/doctors }
+
+  /health:
+    get:
+      tags: [System]
+      summary: Health check
+      operationId: health
+      responses:
+        '200': { description: Service is up }
+  /api/admin/reset-demo-data:
+    post:
+      tags: [System]
+      summary: Reset all data back to the seed data (demo utility)
+      operationId: resetDemoData
+      responses:
+        '200': { description: Data reset, content: { application/json: { example: { success: true, message: Demo data has been reset to the original seed data. } } } }
+
+components:
+  parameters:
+    DoctorId: { name: id, in: path, required: true, description: Doctor ID, schema: { type: string, example: DOC001 } }
+    PatientId: { name: id, in: path, required: true, description: Patient ID, schema: { type: string, example: PAT001 } }
+    AppointmentId: { name: id, in: path, required: true, description: Appointment ID, schema: { type: string, example: APT10001 } }
+
+  responses:
+    BadRequest:
+      description: Validation error (400)
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          examples:
+            invalidDate: { value: { success: false, errorCode: INVALID_DATE, message: '"2026-13-45" is not a valid date. Use the format YYYY-MM-DD.' } }
+            validation: { value: { success: false, errorCode: VALIDATION_ERROR, message: Request validation failed., details: [{ field: slotId, message: slotId is required. }] } }
+            sameSlot: { value: { success: false, errorCode: SAME_SLOT, message: The new slot is the same as the current appointment slot. } }
+    NotFound:
+      description: Resource not found (404)
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          examples:
+            doctor: { value: { success: false, errorCode: DOCTOR_NOT_FOUND, message: Doctor with ID DOC999 was not found. } }
+            patient: { value: { success: false, errorCode: PATIENT_NOT_FOUND, message: Patient with ID PAT999 was not found. } }
+            appointment: { value: { success: false, errorCode: APPOINTMENT_NOT_FOUND, message: Appointment with ID APT99999 was not found. } }
+    Conflict:
+      description: Business rule conflict (409)
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          examples:
+            slotBooked: { value: { success: false, errorCode: SLOT_ALREADY_BOOKED, message: The selected appointment slot is no longer available. } }
+            doctorUnavailable: { value: { success: false, errorCode: DOCTOR_UNAVAILABLE, message: Dr. Lakshmi Rao is currently not available for appointments. } }
+            cancelled: { value: { success: false, errorCode: APPOINTMENT_ALREADY_CANCELLED, message: Appointment APT10005 has already been cancelled. } }
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        success: { type: boolean, example: false }
+        errorCode: { type: string, example: SLOT_ALREADY_BOOKED }
+        message: { type: string, example: The selected appointment slot is no longer available. }
+        details: { description: Optional extra information (field errors, valid values) }
+    Doctor:
+      type: object
+      properties:
+        doctorId: { type: string, example: DOC001 }
+        name: { type: string, example: Dr. Rahul Sharma }
+        specialization: { type: string, example: Cardiology }
+        department: { type: string, example: Heart & Vascular }
+        experienceYears: { type: integer, example: 15 }
+        consultationFee: { type: number, example: 1000 }
+        currency: { type: string, example: INR }
+        hospital: { type: string, example: CityCare Demo Hospital }
+        location: { type: string, example: 'Block A, Floor 1, Room 101' }
+        availabilityStatus: { type: string, enum: [AVAILABLE, ON_LEAVE] }
+    SlotList:
+      type: object
+      properties:
+        success: { type: boolean, example: true }
+        doctorId: { type: string, example: DOC001 }
+        doctorName: { type: string, example: Dr. Rahul Sharma }
+        specialization: { type: string, example: Cardiology }
+        date: { type: string, nullable: true, example: '2026-10-10' }
+        totalAvailable: { type: integer, example: 8 }
+        availableSlots:
+          type: array
+          items:
+            type: object
+            properties:
+              slotId: { type: string, example: S0025 }
+              date: { type: string, example: '2026-10-10' }
+              time: { type: string, example: 10:00 AM }
+              status: { type: string, example: AVAILABLE }
+    Patient:
+      type: object
+      properties:
+        patientId: { type: string, example: PAT001 }
+        name: { type: string, example: Aarav Demo }
+        age: { type: integer, example: 34 }
+        gender: { type: string, enum: [MALE, FEMALE, OTHER] }
+        phone: { type: string, example: '9000000001' }
+        email: { type: string, nullable: true, example: aarav.demo@example.test }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    PatientInput:
+      type: object
+      required: [name, age, gender, phone]
+      properties:
+        name: { type: string, minLength: 2, maxLength: 100 }
+        age: { type: integer, minimum: 0, maximum: 120 }
+        gender: { type: string, enum: [MALE, FEMALE, OTHER] }
+        phone: { type: string, description: 10 digits, example: '9000000099' }
+        email: { type: string, nullable: true }
+    BookingRequest:
+      type: object
+      required: [patientId, doctorId, slotId]
+      properties:
+        patientId: { type: string, example: PAT001 }
+        doctorId: { type: string, example: DOC001 }
+        slotId: { type: string, example: S0026 }
+        reason: { type: string, maxLength: 200, example: Chest discomfort }
+    RescheduleRequest:
+      type: object
+      required: [slotId]
+      properties:
+        slotId: { type: string, description: The new slot, example: S0027 }
+        doctorId: { type: string, description: Optional. Defaults to the current doctor, example: DOC001 }
+    Appointment:
+      type: object
+      properties:
+        success: { type: boolean, example: true }
+        appointmentId: { type: string, example: APT10001 }
+        status: { type: string, enum: [CONFIRMED, CANCELLED] }
+        patientId: { type: string, example: PAT001 }
+        patientName: { type: string, example: Aarav Demo }
+        doctorId: { type: string, example: DOC001 }
+        doctor: { type: string, example: Dr. Rahul Sharma }
+        specialization: { type: string, example: Cardiology }
+        hospital: { type: string, example: CityCare Demo Hospital }
+        location: { type: string }
+        slotId: { type: string, example: S0018 }
+        date: { type: string, example: '2026-10-09' }
+        time: { type: string, example: 10:30 AM }
+        reason: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        cancelledAt: { type: string, format: date-time }
+        cancellationReason: { type: string }
