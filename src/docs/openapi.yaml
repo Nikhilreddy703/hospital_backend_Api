@@ -284,7 +284,7 @@ paths:
     post:
       tags: [Appointments]
       summary: Book an appointment (slot AVAILABLE -> BOOKED)
-      description: Provide either slotId or both date and time. The API checks that the selected slot belongs to the doctor and is still available.
+      description: Provide either slotId or both date and time. The API checks that the selected slot belongs to the doctor, is still available, and is not in the past.
       operationId: bookAppointment
       requestBody:
         required: true

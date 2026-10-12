@@ -5,6 +5,19 @@ const isValidDate = (v) => {
   return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === v;
 };
 
+function todayInIndia() {
+  const parts = new Intl.DateTimeFormat('en', {
+    timeZone: 'Asia/Kolkata',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(new Date());
+  const values = Object.fromEntries(parts.map(({ type, value }) => [type, value]));
+  return `${values.year}-${values.month}-${values.day}`;
+}
+
+const isPastDate = (date) => date < todayInIndia();
+
 /** "14:30" -> "2:30 PM" */
 const to12h = (t) => {
   const [h, m] = t.split(':').map(Number);
@@ -15,4 +28,4 @@ const normalize = (s) => String(s).trim().toLowerCase();
 const nowIso = () => new Date().toISOString();
 const pad = (n, len) => String(n).padStart(len, '0');
 
-module.exports = { isValidDate, to12h, normalize, nowIso, pad };
+module.exports = { isValidDate, isPastDate, todayInIndia, to12h, normalize, nowIso, pad };

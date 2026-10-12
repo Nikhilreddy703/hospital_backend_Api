@@ -1,13 +1,13 @@
 const db = require('../data/db');
 const { errors } = require('../utils/errors');
-const { isValidDate } = require('../utils/helpers');
+const { isValidDate, todayInIndia } = require('../utils/helpers');
 const doctorService = require('./doctor.service');
 
 const toSlotView = (s) => ({ slotId: s.slotId, date: s.date, time: s.time, status: s.status });
 
 function availableSlotsFor(doctorId) {
   return db.data.slots
-    .filter((s) => s.doctorId === doctorId && s.status === 'AVAILABLE')
+    .filter((s) => s.doctorId === doctorId && s.status === 'AVAILABLE' && s.date >= todayInIndia())
     .sort((a, b) => a.date.localeCompare(b.date) || a.time24.localeCompare(b.time24));
 }
 

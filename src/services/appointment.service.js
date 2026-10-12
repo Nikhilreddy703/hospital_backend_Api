@@ -1,6 +1,6 @@
 const db = require('../data/db');
 const { errors } = require('../utils/errors');
-const { nowIso } = require('../utils/helpers');
+const { nowIso, isPastDate } = require('../utils/helpers');
 const { STATUS } = require('../models/appointment.model');
 const doctorService = require('./doctor.service');
 const patientService = require('./patient.service');
@@ -54,6 +54,7 @@ function book({ patientId, doctorId, slotId, date, time, reason }) {
   const slot = slotId
     ? slotService.findSlotForDoctor(slotId, doctor.doctorId)
     : slotService.findSlotByDateTime(date, time, doctor.doctorId);
+  if (isPastDate(slot.date)) throw errors.pastAppointmentDate();
   if (slot.status !== 'AVAILABLE') throw errors.slotAlreadyBooked();
 
   const now = nowIso();
@@ -116,6 +117,7 @@ function reschedule(id, { slotId, doctorId }) {
   const doctor = doctorService.getDoctor(doctorId || appt.doctorId);
   assertDoctorAvailable(doctor);
   const newSlot = slotService.findSlotForDoctor(slotId, doctor.doctorId);
+  if (isPastDate(newSlot.date)) throw errors.pastAppointmentDate();
   if (newSlot.slotId === appt.slotId) throw errors.sameSlot();
   if (newSlot.status !== 'AVAILABLE') throw errors.slotAlreadyBooked();
 
