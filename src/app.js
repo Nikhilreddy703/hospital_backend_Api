@@ -13,7 +13,12 @@ const { notFound, errorHandler } = require('./middleware/errorHandler');
 
 const app = express();
 
-app.use(cors());
+app.use(cors({
+  origin(origin, callback) {
+    if (!origin || config.corsOrigins.includes(origin)) return callback(null, true);
+    return callback(null, false);
+  },
+}));
 app.use(express.json());
 if (process.env.NODE_ENV !== 'test') app.use(morgan('dev'));
 
@@ -30,8 +35,13 @@ app.get('/health', (req, res) =>
   res.json({ success: true, status: 'UP', service: 'hospital-mock-backend', time: new Date().toISOString() })
 );
 
-if (config.enableAdminReset) {
+if (config.enableAdminReset && config.adminResetToken) {
   app.post('/api/admin/reset-demo-data', (req, res) => {
+    const supplied = Buffer.from(String(req.get('x-admin-reset-token') || ''));
+    const expected = Buffer.from(config.adminResetToken);
+    if (supplied.length !== expected.length || !require('crypto').timingSafeEqual(supplied, expected)) {
+      return res.status(401).json({ success: false, errorCode: 'UNAUTHORIZED', message: 'Authentication is required or the credentials are invalid.' });
+    }
     db.reset();
     res.json({ success: true, message: 'Demo data has been reset to the original seed data.' });
   });

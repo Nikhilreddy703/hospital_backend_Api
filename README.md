@@ -33,7 +33,7 @@ npm start                   # or: npm run dev  (auto-restart on change)
 - OpenAPI JSON: http://localhost:3000/api-docs.json
 - Health check: http://localhost:3000/health
 
-Set `MONGODB_URI` before starting the server. On startup, existing records in `db.json` are imported into matching MongoDB collections only when those collections are empty. The four collections are `doctors`, `patients`, `appointments`, and `slots`.
+Set `MONGODB_URI`, `JWT_SECRET`, and `DOCTOR_REGISTRATION_KEY` before starting the server. MongoDB is the source of truth; the backend does not read or write `db.json`. Existing MongoDB documents are preserved. Seed records are added only to empty core collections.
 
 ## Scripts
 
@@ -41,11 +41,10 @@ Set `MONGODB_URI` before starting the server. On startup, existing records in `d
 |---|---|
 | `npm start` | Start the server |
 | `npm run dev` | Start with auto-reload (Node 18.11+) |
-| `npm run seed` | Regenerate `src/data/db.json` (wipes all changes) |
-| `npm test` | Run the Jest + Supertest API tests (in-memory DB, never touches `db.json`) |
+| `npm run seed` | Initialize empty MongoDB collections without replacing existing records |
+| `npm test` | Run the Jest + Supertest API tests using in-memory data |
 
-To reset data while the server is running: `POST /api/admin/reset-demo-data`
-(disable with `ENABLE_ADMIN_RESET=false`).
+The destructive demo reset endpoint is disabled by default. Enable it only with `ENABLE_ADMIN_RESET=true` and a separate `ADMIN_RESET_TOKEN`.
 
 ## Configuration (`.env`)
 
@@ -54,11 +53,15 @@ To reset data while the server is running: `POST /api/admin/reset-demo-data`
 | `PORT` | `3000` | HTTP port |
 | `MONGODB_URI` | — | MongoDB connection string (keep credentials in `.env`, never commit them) |
 | `MONGODB_DB_NAME` | URI database name | Optional database name override |
-| `DB_PATH` | `src/data/db.json` | Legacy JSON file used for one-time import |
-| `PERSIST_DB` | `true` | `false` disables legacy import and persistence |
+| `PERSIST_DB` | `true` | Set to `false` only for in-memory tests |
 | `SEED_START_DATE` | `2026-10-07` | First date that gets slots |
 | `SEED_DAYS` | `14` | Number of days of slots (Sundays skipped) |
-| `ENABLE_ADMIN_RESET` | `true` | Enables the reset endpoint |
+| `JWT_SECRET` | — | Signs doctor authentication tokens; use a long random secret |
+| `JWT_EXPIRES_IN` | `8h` | Doctor JWT lifetime |
+| `DOCTOR_REGISTRATION_KEY` | — | Admin-held key required to register an existing doctor |
+| `CORS_ORIGIN` | localhost dev origins | Comma-separated allowed frontend origins |
+| `ENABLE_ADMIN_RESET` | `false` | Enables the destructive demo reset endpoint |
+| `ADMIN_RESET_TOKEN` | — | Required separately if demo reset is enabled |
 
 ## Seed data
 

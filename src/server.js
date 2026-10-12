@@ -1,6 +1,7 @@
 const app = require('./app');
 const config = require('./utils/config');
 const db = require('./data/db');
+const doctorLeaveService = require('./services/doctorLeave.service');
 
 async function start() {
   await db.connect();
@@ -26,6 +27,17 @@ async function start() {
   await completePastAppointments();
   const completionTimer = setInterval(completePastAppointments, 60 * 1000);
   completionTimer.unref();
+  const expireLeaves = async () => {
+    try {
+      const expired = await doctorLeaveService.expirePastLeaves();
+      if (expired) console.log(`Expired ${expired} doctor leave record(s).`);
+    } catch (error) {
+      console.error('Doctor leave cleanup will retry later:', error.message);
+    }
+  };
+  await expireLeaves();
+  const leaveTimer = setInterval(expireLeaves, 60 * 60 * 1000);
+  leaveTimer.unref();
 
   app.listen(config.port, () => {
     console.log(`Hospital mock backend running on http://localhost:${config.port}`);

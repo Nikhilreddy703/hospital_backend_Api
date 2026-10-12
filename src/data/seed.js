@@ -1,5 +1,3 @@
-const fs = require('fs');
-const path = require('path');
 const config = require('../utils/config');
 const { to12h } = require('../utils/helpers');
 
@@ -104,13 +102,17 @@ function buildSeedData() {
 
 module.exports = { buildSeedData };
 
-// `npm run seed` -> (re)generates the JSON database file
+// `npm run seed` safely initializes only empty MongoDB collections.
 if (require.main === module) {
-  const data = buildSeedData();
-  fs.mkdirSync(path.dirname(config.dbPath), { recursive: true });
-  fs.writeFileSync(config.dbPath, JSON.stringify(data, null, 2));
-  console.log(
-    `Seeded ${config.dbPath}: ${data.doctors.length} doctors, ${data.slots.length} slots, ` +
-      `${data.patients.length} patients, ${data.appointments.length} appointments.`
-  );
+  const db = require('./db');
+  db.connect()
+    .then(async () => {
+      console.log('MongoDB connected. Existing records were preserved; seed data was added only to empty collections.');
+      await db.close();
+    })
+    .catch(async (error) => {
+      console.error('Could not initialize MongoDB seed data:', error.message);
+      await db.close().catch(() => {});
+      process.exitCode = 1;
+    });
 }

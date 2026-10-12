@@ -2,6 +2,11 @@ const db = require('../data/db');
 const { errors } = require('../utils/errors');
 const { normalize } = require('../utils/helpers');
 
+function publicDoctor(doctor) {
+  const { passwordHash, email, phone, accountCreatedAt, ...record } = doctor;
+  return record;
+}
+
 function countBy(key) {
   const map = new Map();
   for (const d of db.data.doctors) map.set(d[key], (map.get(d[key]) || 0) + 1);
@@ -15,7 +20,7 @@ function getDoctor(id) {
   const key = String(id).toUpperCase();
   const doctor = db.data.doctors.find((d) => d.doctorId === key);
   if (!doctor) throw errors.doctorNotFound(id);
-  return doctor;
+  return publicDoctor(doctor);
 }
 
 function findDoctors({ specialization, department, available, name } = {}) {
@@ -33,9 +38,11 @@ function findDoctors({ specialization, department, available, name } = {}) {
     if (!valid.some((v) => normalize(v) === key)) throw errors.invalidDepartment(department, valid);
     result = result.filter((d) => normalize(d.department) === key);
   }
-  if (available === 'true') result = result.filter((d) => d.availabilityStatus === 'AVAILABLE');
+  if (available === 'true') result = result.filter((d) =>
+    d.availabilityStatus === 'AVAILABLE' && d.status !== 'OFFLINE' && d.status !== 'ON_LEAVE' && d.isActive !== false
+  );
   if (name) result = result.filter((d) => normalize(d.name).includes(normalize(name)));
-  return result;
+  return result.map(publicDoctor);
 }
 
-module.exports = { getDoctor, findDoctors, listSpecializations, listDepartments };
+module.exports = { getDoctor, findDoctors, listSpecializations, listDepartments, publicDoctor };

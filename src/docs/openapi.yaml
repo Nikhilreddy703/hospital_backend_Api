@@ -331,6 +331,8 @@ paths:
     get:
       tags: [Appointments]
       summary: Get appointment by ID
+      description: Existing appointment-ID tracking. A supplied doctor JWT is restricted to appointments assigned to that doctor; the response includes the prescription when one exists.
+      security: [{ bearerAuth: [] }, {}]
       operationId: getAppointment
       parameters: [{ $ref: '#/components/parameters/AppointmentId' }]
       responses:
@@ -466,6 +468,214 @@ paths:
       responses:
         '200': { description: Same response as GET /api/doctors }
 
+  /api/doctors/register:
+    post:
+      tags: [Doctors]
+      summary: Register a login for an existing doctor record
+      description: Requires the admin-held x-doctor-registration-key header. Does not create unrestricted public doctor records.
+      operationId: registerDoctor
+      parameters:
+        - { name: x-doctor-registration-key, in: header, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DoctorRegistrationRequest' }
+      responses:
+        '201': { description: Account created without returning password data }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { description: Registration key is invalid }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /api/doctors/login:
+    post:
+      tags: [Doctors]
+      summary: Doctor login
+      operationId: doctorLogin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DoctorLoginRequest' }
+      responses:
+        '200': { description: JWT and safe doctor summary }
+        '401': { description: Invalid credentials }
+  /api/doctors/me:
+    get:
+      tags: [Doctors]
+      summary: Get authenticated doctor's profile
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Own profile, excluding password hash }
+        '401': { description: Authentication required }
+  /api/doctors/me/status:
+    patch:
+      tags: [Doctors]
+      summary: Update authenticated doctor's status
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [status], properties: { status: { type: string, enum: [AVAILABLE, CHECKED_IN, ON_LEAVE, OFFLINE] } } }
+      responses:
+        '200': { description: Status updated }
+        '401': { description: Authentication required }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /api/doctors/me/check-in:
+    post:
+      tags: [Doctors]
+      summary: Check in authenticated doctor
+      security: [{ bearerAuth: [] }]
+      responses:
+        '201': { description: Attendance check-in saved in MongoDB }
+        '401': { description: Authentication required }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /api/doctors/me/check-out:
+    post:
+      tags: [Doctors]
+      summary: Check out authenticated doctor
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Attendance check-out saved in MongoDB }
+        '401': { description: Authentication required }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /api/doctors/me/attendance:
+    get:
+      tags: [Doctors]
+      summary: List own attendance records
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: date, in: query, schema: { type: string, format: date } }
+        - { name: page, in: query, schema: { type: integer, minimum: 1 } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100 } }
+      responses:
+        '200': { description: Paginated attendance history }
+  /api/doctors/me/leave:
+    get:
+      tags: [Doctors]
+      summary: List own leave records
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Leave records owned by authenticated doctor }
+    post:
+      tags: [Doctors]
+      summary: Create a leave period
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DoctorLeaveRequest' }
+      responses:
+        '201': { description: Leave persisted }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /api/doctors/me/leave/{id}:
+    delete:
+      tags: [Doctors]
+      summary: Cancel own active leave
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses:
+        '200': { description: Leave marked cancelled }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/doctors/me/availability:
+    get:
+      tags: [Doctors, Slots]
+      summary: Read authenticated doctor's available dates
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Reuses existing MongoDB slots and excludes active leave dates }
+  /api/doctors/me/appointments:
+    get:
+      tags: [Doctors, Appointments]
+      summary: List appointments assigned to authenticated doctor
+      description: A doctorId query parameter is ignored; ownership always comes from the verified JWT.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: date, in: query, schema: { type: string, format: date } }
+        - { name: status, in: query, schema: { type: string, enum: [CONFIRMED, PATIENT_CHECKED_IN, IN_CONSULTATION, COMPLETED, CANCELLED] } }
+        - { name: page, in: query, schema: { type: integer, minimum: 1 } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100 } }
+      responses:
+        '200': { description: Own appointments with pagination }
+  /api/doctors/me/appointments/today:
+    get:
+      tags: [Doctors, Appointments]
+      summary: List today's appointments for authenticated doctor
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Today's appointments sorted by time }
+  /api/doctors/me/check-ins:
+    get:
+      tags: [Doctors, Appointments]
+      summary: List checked-in patients for authenticated doctor
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Own patient check-ins only }
+  /api/doctors/me/analytics:
+    get:
+      tags: [Doctors]
+      summary: Aggregate own appointments and slot availability
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: range, in: query, schema: { type: string, enum: [today, week, month], default: today } }
+      responses:
+        '200': { description: Counts computed from MongoDB aggregation }
+
+  /api/appointments/{id}/check-in:
+    post:
+      tags: [Appointments]
+      summary: Patient check-in by appointment ID
+      parameters: [{ $ref: '#/components/parameters/AppointmentId' }]
+      responses:
+        '200': { description: Check-in time stored in the appointment }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /api/appointments/{id}/start-consultation:
+    post:
+      tags: [Appointments]
+      summary: Start consultation for an owned appointment
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/AppointmentId' }]
+      responses:
+        '200': { description: Appointment changes to IN_CONSULTATION }
+        '403': { description: Appointment belongs to another doctor }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /api/appointments/{id}/complete:
+    post:
+      tags: [Appointments]
+      summary: Complete an active consultation
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/AppointmentId' }]
+      responses:
+        '200': { description: Appointment and consultation change to COMPLETED }
+        '403': { description: Appointment belongs to another doctor }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /api/appointments/{id}/prescription:
+    post:
+      tags: [Appointments]
+      summary: Add prescription to an owned consultation
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/AppointmentId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PrescriptionRequest' }
+      responses:
+        '201': { description: Prescription persisted in the prescriptions collection }
+        '403': { description: Appointment belongs to another doctor }
+        '409': { $ref: '#/components/responses/Conflict' }
+    get:
+      tags: [Appointments]
+      summary: Retrieve prescription through appointment tracking
+      description: Patient lookup uses the appointment ID; if a doctor JWT is supplied, ownership is checked.
+      parameters: [{ $ref: '#/components/parameters/AppointmentId' }]
+      responses:
+        '200': { description: Prescription, or data null if one is not available }
+        '403': { description: Doctor token does not own the appointment }
+
   /health:
     get:
       tags: [System]
@@ -482,6 +692,11 @@ paths:
         '200': { description: Data reset, content: { application/json: { example: { success: true, message: Demo data has been reset to the original seed data. } } } }
 
 components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
   parameters:
     DoctorId: { name: id, in: path, required: true, description: Doctor ID, schema: { type: string, example: DOC001 } }
     PatientId: { name: id, in: path, required: true, description: Patient ID, schema: { type: string, example: PAT001 } }
@@ -517,6 +732,60 @@ components:
             cancelled: { value: { success: false, errorCode: APPOINTMENT_ALREADY_CANCELLED, message: Appointment APT10005 has already been cancelled. } }
 
   schemas:
+    DoctorRegistrationRequest:
+      type: object
+      required: [doctorId, email, password]
+      properties:
+        doctorId: { type: string, example: DOC001 }
+        email: { type: string, format: email, example: doctor@example.com }
+        password: { type: string, minLength: 12, maxLength: 128 }
+    DoctorLoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string, format: email }
+        password: { type: string, format: password }
+    DoctorLeaveRequest:
+      type: object
+      required: [startDate, endDate]
+      properties:
+        startDate: { type: string, format: date }
+        endDate: { type: string, format: date }
+        reason: { type: string, maxLength: 200 }
+    PrescriptionRequest:
+      type: object
+      required: [diagnosis, medicines]
+      properties:
+        diagnosis: { type: string, maxLength: 500 }
+        notes: { type: string, maxLength: 2000 }
+        medicines:
+          type: array
+          minItems: 1
+          maxItems: 20
+          items:
+            type: object
+            required: [name, dosage, frequency, duration]
+            properties:
+              name: { type: string }
+              dosage: { type: string }
+              frequency: { type: string }
+              duration: { type: string }
+              instructions: { type: string }
+    Prescription:
+      type: object
+      properties:
+        id: { type: string }
+        appointmentId: { type: string, example: APT10001 }
+        patientId: { type: string, example: PAT001 }
+        doctorId: { type: string, example: DOC001 }
+        doctorName: { type: string }
+        diagnosis: { type: string }
+        notes: { type: string, nullable: true }
+        medicines:
+          type: array
+          items: { type: object }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
     Error:
       type: object
       properties:
@@ -597,7 +866,7 @@ components:
       properties:
         success: { type: boolean, example: true }
         appointmentId: { type: string, example: APT10001 }
-        status: { type: string, enum: [CONFIRMED, CANCELLED, COMPLETED] }
+        status: { type: string, enum: [CONFIRMED, PATIENT_CHECKED_IN, IN_CONSULTATION, CANCELLED, COMPLETED] }
         patientId: { type: string, example: PAT001 }
         patientName: { type: string, example: Aarav Demo }
         doctorId: { type: string, example: DOC001 }
@@ -609,6 +878,19 @@ components:
         date: { type: string, example: '2026-10-09' }
         time: { type: string, example: 10:30 AM }
         reason: { type: string, nullable: true }
+        patientCheckIn:
+          type: object
+          properties:
+            status: { type: string, enum: [NOT_CHECKED_IN, CHECKED_IN] }
+            checkInTime: { type: string, format: date-time, nullable: true }
+        consultation:
+          type: object
+          properties:
+            status: { type: string, enum: [NOT_STARTED, IN_CONSULTATION, COMPLETED] }
+            startedAt: { type: string, format: date-time, nullable: true }
+            completedAt: { type: string, format: date-time, nullable: true }
+        prescriptionId: { type: string, nullable: true }
+        prescription: { allOf: [{ $ref: '#/components/schemas/Prescription' }], nullable: true }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
         cancelledAt: { type: string, format: date-time }

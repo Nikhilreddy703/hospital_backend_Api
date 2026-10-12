@@ -1,13 +1,15 @@
-const fs = require('fs');
 const { MongoClient } = require('mongodb');
 const config = require('../utils/config');
 const { buildSeedData } = require('./seed');
+const { createMemoryCollection } = require('./memoryCollection');
 const { todayInIndia, isPastAppointmentTime, nowIso } = require('../utils/helpers');
 
 let state = null;
 let client = null;
+let database = null;
 let collections = null;
 let pendingWrite = Promise.resolve();
+let persistedState = null;
 
 const collectionNames = {
   doctors: 'doctors',
@@ -22,39 +24,35 @@ function withoutMongoId(document) {
 }
 
 function save(clearCollections = false) {
-  if (!config.persist) return;
-  if (collections) {
-    // Keep the synchronous service layer; serialize snapshots so writes cannot
-    // overtake one another while MongoDB performs the actual persistence.
-    const snapshot = JSON.parse(JSON.stringify(state));
-    pendingWrite = pendingWrite.then(async () => {
-      for (const [key, collection] of Object.entries(collections)) {
-        if (clearCollections) await collection.deleteMany({});
-        const idField = key === 'doctors' ? 'doctorId' : key === 'patients' ? 'patientId' : key === 'appointments' ? 'appointmentId' : 'slotId';
-        const docs = snapshot[key];
-        if (docs.length) {
-          await collection.bulkWrite(docs.map((doc) => ({
-            updateOne: { filter: { [idField]: doc[idField] }, update: { $set: doc }, upsert: true },
-          })), { ordered: true });
-        }
-      }
-    }).catch((error) => console.error('Could not persist changes to MongoDB:', error.message));
-    return;
+  if (!config.persist || !collections) return Promise.resolve();
+  // Persist only documents changed in this process. Rewriting every cached
+  // document can overwrite concurrent changes made by another Render instance.
+  const snapshot = JSON.parse(JSON.stringify(state));
+  const idFields = { doctors: 'doctorId', patients: 'patientId', appointments: 'appointmentId', slots: 'slotId' };
+  const changed = {};
+  for (const [key, idField] of Object.entries(idFields)) {
+    const previous = new Map((persistedState?.[key] || []).map((doc) => [doc[idField], JSON.stringify(doc)]));
+    changed[key] = snapshot[key].filter((doc) => clearCollections || previous.get(doc[idField]) !== JSON.stringify(doc));
   }
-  // JSON persistence remains available for tests and local development.
-  const configPath = config.dbPath;
-  fs.mkdirSync(require('path').dirname(configPath), { recursive: true });
-  fs.writeFileSync(configPath, JSON.stringify(state, null, 2));
+  const write = pendingWrite.then(async () => {
+    for (const [key, collection] of Object.entries(collections)) {
+      if (clearCollections) await collection.deleteMany({});
+      const idField = idFields[key];
+      if (changed[key].length) {
+        await collection.bulkWrite(changed[key].map((doc) => ({
+          updateOne: { filter: { [idField]: doc[idField] }, update: { $set: doc }, upsert: true },
+        })), { ordered: true });
+      }
+    }
+    persistedState = snapshot;
+  });
+  pendingWrite = write.catch((error) => console.error('Could not persist changes to MongoDB:', error.message));
+  return write;
 }
 
 function load() {
   if (state) return state;
-  if (config.persist && fs.existsSync(config.dbPath)) {
-    state = JSON.parse(fs.readFileSync(config.dbPath, 'utf8'));
-  } else {
-    state = buildSeedData();
-    save();
-  }
+  state = buildSeedData();
   return state;
 }
 
@@ -68,26 +66,19 @@ async function connect() {
   if (!config.mongoUri) throw new Error('MONGODB_URI is required to start the server.');
   client = new MongoClient(config.mongoUri);
   await client.connect();
-  const database = client.db(config.mongoDbName || undefined);
+  database = client.db(config.mongoDbName || undefined);
   collections = Object.fromEntries(Object.entries(collectionNames).map(([key, name]) => [key, database.collection(name)]));
 
-  const legacy = config.persist && fs.existsSync(config.dbPath)
-    ? JSON.parse(fs.readFileSync(config.dbPath, 'utf8'))
-    : null;
   const data = {};
   for (const [key, collection] of Object.entries(collections)) {
     let docs = await collection.find({}).toArray();
-    if (docs.length === 0 && legacy && Array.isArray(legacy[key]) && legacy[key].length) {
-      await collection.insertMany(legacy[key]);
-      docs = legacy[key];
-      console.log(`Imported ${docs.length} ${key} from db.json into MongoDB.`);
-    }
     data[key] = docs.map(withoutMongoId);
   }
 
   const seeded = buildSeedData();
   if (Object.values(data).every((items) => items.length === 0)) {
     state = seeded;
+    persistedState = JSON.parse(JSON.stringify(data));
     save();
   } else {
     state = {
@@ -100,9 +91,71 @@ async function connect() {
         nextAppointmentNumber: Math.max(10000, ...data.appointments.map((a) => Number(String(a.appointmentId).replace(/^APT/, '')) || 0)) + 1,
       },
     };
+    persistedState = JSON.parse(JSON.stringify(data));
     // If only some collections were empty, initialize those with seed records.
     save();
   }
+  await ensureIndexes();
+}
+
+async function ensureIndexes() {
+  await Promise.all([
+    collections.doctors.createIndex({ doctorId: 1 }, { unique: true, name: 'doctor_id_unique' }),
+    collections.doctors.createIndex({ email: 1 }, { unique: true, sparse: true, name: 'doctor_email_unique' }),
+    collections.patients.createIndex({ patientId: 1 }, { unique: true, name: 'patient_id_unique' }),
+    collections.appointments.createIndex({ appointmentId: 1 }, { unique: true, name: 'appointment_id_unique' }),
+    collections.appointments.createIndex({ doctorId: 1, date: 1, time24: 1 }, { name: 'appointments_doctor_schedule' }),
+    collections.appointments.createIndex({ patientId: 1, date: 1 }, { name: 'appointments_patient_schedule' }),
+    collections.appointments.createIndex({ doctorId: 1, status: 1, date: 1 }, { name: 'appointments_doctor_status_date' }),
+    collections.slots.createIndex({ slotId: 1 }, { unique: true, name: 'slot_id_unique' }),
+    collections.slots.createIndex({ doctorId: 1, date: 1, time24: 1 }, { unique: true, name: 'doctor_slot_time_unique' }),
+    database.collection('doctor_attendance').createIndex(
+      { doctorId: 1, date: 1 },
+      { unique: true, partialFilterExpression: { checkOutTime: null }, name: 'active_daily_attendance_unique' }
+    ),
+    database.collection('doctor_leaves').createIndex({ doctorId: 1, status: 1, startDate: 1, endDate: 1 }, { name: 'doctor_leave_dates' }),
+    database.collection('prescriptions').createIndex({ appointmentId: 1 }, { unique: true, name: 'prescription_appointment_unique' }),
+    database.collection('prescriptions').createIndex({ doctorId: 1, createdAt: -1 }, { name: 'prescriptions_doctor_created' }),
+  ]);
+}
+
+function getCollection(name) {
+  if (database) return database.collection(name);
+  if (!config.persist) {
+    if (!state) load();
+    const stateKey = Object.keys(collectionNames).find((key) => collectionNames[key] === name);
+    if (stateKey) return createMemoryCollection(state[stateKey]);
+    state.meta.memoryCollections ||= {};
+    state.meta.memoryCollections[name] ||= [];
+    return createMemoryCollection(state.meta.memoryCollections[name]);
+  }
+  throw new Error('MongoDB is not connected.');
+}
+
+const isConnected = () => Boolean(database);
+
+async function reserveSlot(slotId, doctorId) {
+  if (!collections || !config.persist) return false;
+  const result = await collections.slots.findOneAndUpdate(
+    { slotId, doctorId, status: 'AVAILABLE' },
+    { $set: { status: 'BOOKED' } },
+    { returnDocument: 'after' }
+  );
+  return Boolean(result);
+}
+
+async function allocateAppointmentNumber() {
+  if (!collections || !config.persist) return state.meta.nextAppointmentNumber++;
+  const counters = database.collection('counters');
+  const initialValue = Math.max(10000, (state.meta.nextAppointmentNumber || 10001) - 1);
+  await counters.updateOne({ _id: 'appointmentNumber' }, { $setOnInsert: { value: initialValue } }, { upsert: true });
+  const result = await counters.findOneAndUpdate(
+    { _id: 'appointmentNumber' },
+    { $inc: { value: 1 } },
+    { returnDocument: 'after' }
+  );
+  state.meta.nextAppointmentNumber = Math.max(state.meta.nextAppointmentNumber || 10001, result.value + 1);
+  return result.value;
 }
 
 async function close() {
@@ -153,10 +206,15 @@ async function completePastAppointments() {
   if (!collections || !config.persist) {
     const completedAt = nowIso();
     const pastAppointments = state.appointments.filter((appointment) =>
-      appointment.status === 'CONFIRMED' && isPastAppointmentTime(appointment.date, appointment.time24)
+      ['CONFIRMED', 'PATIENT_CHECKED_IN', 'IN_CONSULTATION'].includes(appointment.status) && isPastAppointmentTime(appointment.date, appointment.time24)
     );
     for (const appointment of pastAppointments) {
       appointment.status = 'COMPLETED';
+      appointment.consultation = {
+        ...(appointment.consultation || {}),
+        status: 'COMPLETED',
+        completedAt,
+      };
       appointment.updatedAt = completedAt;
     }
     if (pastAppointments.length) save();
@@ -166,7 +224,7 @@ async function completePastAppointments() {
   const operation = pendingWrite.then(async () => {
     const completedAt = nowIso();
     const pastAppointments = state.appointments.filter((appointment) =>
-      appointment.status === 'CONFIRMED' && isPastAppointmentTime(appointment.date, appointment.time24)
+      ['CONFIRMED', 'PATIENT_CHECKED_IN', 'IN_CONSULTATION'].includes(appointment.status) && isPastAppointmentTime(appointment.date, appointment.time24)
     );
     let changed = 0;
 
@@ -174,14 +232,24 @@ async function completePastAppointments() {
       const result = await collections.appointments.updateOne(
         {
           appointmentId: appointment.appointmentId,
-          status: 'CONFIRMED',
+          status: appointment.status,
           date: appointment.date,
           time24: appointment.time24,
         },
-        { $set: { status: 'COMPLETED', updatedAt: completedAt } }
+        { $set: {
+          status: 'COMPLETED',
+          'consultation.status': 'COMPLETED',
+          'consultation.completedAt': completedAt,
+          updatedAt: completedAt,
+        } }
       );
-      if (result.matchedCount && appointment.status === 'CONFIRMED') {
+      if (result.matchedCount && ['CONFIRMED', 'PATIENT_CHECKED_IN', 'IN_CONSULTATION'].includes(appointment.status)) {
         appointment.status = 'COMPLETED';
+        appointment.consultation = {
+          ...(appointment.consultation || {}),
+          status: 'COMPLETED',
+          completedAt,
+        };
         appointment.updatedAt = completedAt;
         changed += 1;
       }
@@ -202,6 +270,10 @@ module.exports = {
   close,
   prunePastAvailableSlots,
   completePastAppointments,
+  getCollection,
+  isConnected,
+  reserveSlot,
+  allocateAppointmentNumber,
   get data() {
     return load();
   },

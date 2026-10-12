@@ -1,10 +1,13 @@
 const db = require('../data/db');
 const { errors } = require('../utils/errors');
 const { nowIso, isPastDate } = require('../utils/helpers');
+const { todayInIndia } = require('../utils/helpers');
 const { STATUS } = require('../models/appointment.model');
 const doctorService = require('./doctor.service');
 const patientService = require('./patient.service');
 const slotService = require('./slot.service');
+const doctorLeaveService = require('./doctorLeave.service');
+const doctorAttendanceService = require('./doctorAttendance.service');
 
 /** Shape returned to API consumers (hides internal fields such as time24). */
 function toView(a) {
@@ -24,6 +27,9 @@ function toView(a) {
     date: a.date,
     time: a.time,
     reason: a.reason,
+    patientCheckIn: a.patientCheckIn || { status: 'NOT_CHECKED_IN', checkInTime: null },
+    consultation: a.consultation || { status: 'NOT_STARTED', startedAt: null, completedAt: null },
+    prescriptionId: a.prescriptionId || null,
     createdAt: a.createdAt,
     updatedAt: a.updatedAt,
   };
@@ -43,11 +49,13 @@ function findAppointment(id) {
 }
 
 function assertDoctorAvailable(doctor) {
-  if (doctor.availabilityStatus !== 'AVAILABLE') throw errors.doctorUnavailable(doctor.name);
+  if (doctor.isActive === false || doctor.availabilityStatus !== 'AVAILABLE' || doctor.status === 'OFFLINE') {
+    throw errors.doctorUnavailable(doctor.name);
+  }
 }
 
 /** POST /api/appointments : AVAILABLE -> BOOKED */
-function book({ patientId, doctorId, slotId, date, time, reason }) {
+async function book({ patientId, doctorId, slotId, date, time, reason }) {
   const doctor = doctorService.getDoctor(doctorId);
   const patient = patientService.getPatient(patientId);
   assertDoctorAvailable(doctor);
@@ -55,11 +63,14 @@ function book({ patientId, doctorId, slotId, date, time, reason }) {
     ? slotService.findSlotForDoctor(slotId, doctor.doctorId)
     : slotService.findSlotByDateTime(date, time, doctor.doctorId);
   if (isPastDate(slot.date)) throw errors.pastAppointmentDate();
+  if (await doctorLeaveService.isOnLeave(doctor.doctorId, slot.date)) throw errors.doctorOnLeave();
   if (slot.status !== 'AVAILABLE') throw errors.slotAlreadyBooked();
+
+  if (db.isConnected() && !(await db.reserveSlot(slot.slotId, doctor.doctorId))) throw errors.slotAlreadyBooked();
 
   const now = nowIso();
   const appt = {
-    appointmentId: `APT${db.data.meta.nextAppointmentNumber++}`,
+    appointmentId: `APT${await db.allocateAppointmentNumber()}`,
     patientId: patient.patientId,
     doctorId: doctor.doctorId,
     slotId: slot.slotId,
@@ -68,12 +79,27 @@ function book({ patientId, doctorId, slotId, date, time, reason }) {
     time24: slot.time24,
     reason,
     status: STATUS.CONFIRMED,
+    patientCheckIn: { status: 'NOT_CHECKED_IN', checkInTime: null },
+    consultation: { status: 'NOT_STARTED', startedAt: null, completedAt: null },
+    prescriptionId: null,
     createdAt: now,
     updatedAt: now,
   };
   slot.status = 'BOOKED';
   db.data.appointments.push(appt);
-  db.save();
+  try {
+    await db.save();
+  } catch (error) {
+    db.data.appointments = db.data.appointments.filter((item) => item.appointmentId !== appt.appointmentId);
+    slot.status = 'AVAILABLE';
+    if (db.isConnected()) {
+      await Promise.all([
+        db.getCollection('slots').updateOne({ slotId: slot.slotId }, { $set: { status: 'AVAILABLE' } }),
+        db.getCollection('appointments').deleteOne({ appointmentId: appt.appointmentId }),
+      ]);
+    }
+    throw error;
+  }
   return toView(appt);
 }
 
@@ -85,17 +111,67 @@ function getStatus(id) {
     appointmentId: a.appointmentId,
     status: a.status,
     doctor: a.doctor,
+    doctorId: a.doctorId,
     specialization: a.specialization,
     date: a.date,
     time: a.time,
   };
 }
 
+async function checkIn(id) {
+  const appointment = findAppointment(id);
+  if (appointment.status === STATUS.CANCELLED || appointment.status === STATUS.COMPLETED) {
+    throw errors.invalidAppointmentState('This appointment cannot be checked in.');
+  }
+  if (appointment.patientCheckIn && appointment.patientCheckIn.status === 'CHECKED_IN') throw errors.duplicateCheckIn();
+  if (appointment.date !== todayInIndia()) {
+    throw errors.invalidAppointmentState('Patient check-in is available on the appointment date only.');
+  }
+  const checkedInAt = nowIso();
+  appointment.patientCheckIn = { status: 'CHECKED_IN', checkInTime: checkedInAt };
+  appointment.status = STATUS.PATIENT_CHECKED_IN;
+  appointment.updatedAt = checkedInAt;
+  await db.save();
+  return toView(appointment);
+}
+
+async function startConsultation(id, doctorId) {
+  const appointment = findAppointment(id);
+  if (appointment.doctorId !== doctorId) throw errors.forbidden();
+  if (appointment.status !== STATUS.PATIENT_CHECKED_IN || appointment.patientCheckIn?.status !== 'CHECKED_IN') {
+    throw errors.notCheckedIn();
+  }
+  if (!(await doctorAttendanceService.isCurrentlyCheckedIn(doctorId))) {
+    throw errors.invalidAppointmentState('Doctor must check in before starting a consultation.');
+  }
+  const startedAt = nowIso();
+  appointment.status = STATUS.IN_CONSULTATION;
+  appointment.consultation = { ...(appointment.consultation || {}), status: 'IN_CONSULTATION', startedAt, completedAt: null };
+  appointment.updatedAt = startedAt;
+  await db.save();
+  return toView(appointment);
+}
+
+async function completeConsultation(id, doctorId) {
+  const appointment = findAppointment(id);
+  if (appointment.doctorId !== doctorId) throw errors.forbidden();
+  if (appointment.status !== STATUS.IN_CONSULTATION) {
+    throw errors.invalidAppointmentState('Only an in-consultation appointment can be completed.');
+  }
+  const completedAt = nowIso();
+  appointment.status = STATUS.COMPLETED;
+  appointment.consultation = { ...(appointment.consultation || {}), status: 'COMPLETED', completedAt };
+  appointment.updatedAt = completedAt;
+  await db.save();
+  return toView(appointment);
+}
+
 /** DELETE /api/appointments/:id : BOOKED -> AVAILABLE */
-function cancel(id, reason) {
+async function cancel(id, reason) {
   const appt = findAppointment(id);
   if (appt.status === STATUS.CANCELLED) throw errors.appointmentAlreadyCancelled(appt.appointmentId);
   if (appt.status === STATUS.COMPLETED) throw errors.appointmentAlreadyCompleted(appt.appointmentId);
+  if (appt.status === STATUS.IN_CONSULTATION) throw errors.invalidAppointmentState('An active consultation cannot be cancelled.');
 
   const slot = db.data.slots.find((s) => s.slotId === appt.slotId);
   if (slot) slot.status = 'AVAILABLE';
@@ -103,7 +179,7 @@ function cancel(id, reason) {
   appt.cancelledAt = nowIso();
   appt.cancellationReason = reason || 'Cancelled by patient';
   appt.updatedAt = appt.cancelledAt;
-  db.save();
+  await db.save();
   return toView(appt);
 }
 
@@ -111,20 +187,26 @@ function cancel(id, reason) {
  * PUT /api/appointments/:id/reschedule
  * Validate everything first, then release the old slot, book the new one, update the appointment.
  */
-function reschedule(id, { slotId, doctorId }) {
+async function reschedule(id, { slotId, doctorId }) {
   const appt = findAppointment(id);
   if (appt.status === STATUS.CANCELLED) throw errors.appointmentAlreadyCancelled(appt.appointmentId);
   if (appt.status === STATUS.COMPLETED) throw errors.appointmentAlreadyCompleted(appt.appointmentId);
+  if (appt.status === STATUS.PATIENT_CHECKED_IN || appt.status === STATUS.IN_CONSULTATION) {
+    throw errors.invalidAppointmentState('A checked-in appointment cannot be rescheduled.');
+  }
 
   const doctor = doctorService.getDoctor(doctorId || appt.doctorId);
   assertDoctorAvailable(doctor);
   const newSlot = slotService.findSlotForDoctor(slotId, doctor.doctorId);
   if (isPastDate(newSlot.date)) throw errors.pastAppointmentDate();
+  if (await doctorLeaveService.isOnLeave(doctor.doctorId, newSlot.date)) throw errors.doctorOnLeave();
   if (newSlot.slotId === appt.slotId) throw errors.sameSlot();
   if (newSlot.status !== 'AVAILABLE') throw errors.slotAlreadyBooked();
+  if (db.isConnected() && !(await db.reserveSlot(newSlot.slotId, doctor.doctorId))) throw errors.slotAlreadyBooked();
 
   const previous = { slotId: appt.slotId, doctorId: appt.doctorId, date: appt.date, time: appt.time };
   const oldSlot = db.data.slots.find((s) => s.slotId === appt.slotId);
+  const priorAppointment = { ...appt };
   if (oldSlot) oldSlot.status = 'AVAILABLE';
   newSlot.status = 'BOOKED';
   Object.assign(appt, {
@@ -136,7 +218,21 @@ function reschedule(id, { slotId, doctorId }) {
     updatedAt: nowIso(),
     rescheduleCount: (appt.rescheduleCount || 0) + 1,
   });
-  db.save();
+  try {
+    await db.save();
+  } catch (error) {
+    Object.assign(appt, priorAppointment);
+    newSlot.status = 'AVAILABLE';
+    if (oldSlot) oldSlot.status = 'BOOKED';
+    if (db.isConnected()) {
+      await Promise.all([
+        db.getCollection('slots').updateOne({ slotId: newSlot.slotId }, { $set: { status: 'AVAILABLE' } }),
+        oldSlot && db.getCollection('slots').updateOne({ slotId: oldSlot.slotId }, { $set: { status: 'BOOKED' } }),
+        db.getCollection('appointments').updateOne({ appointmentId: appt.appointmentId }, { $set: priorAppointment }),
+      ].filter(Boolean));
+    }
+    throw error;
+  }
   return { appointment: toView(appt), previous };
 }
 
@@ -165,4 +261,28 @@ function getPatientContext(patientId) {
   };
 }
 
-module.exports = { book, getAppointment, getStatus, cancel, reschedule, listForPatient, getPatientContext };
+async function listForDoctor(doctorId, { date, status, page = 1, limit = 50 } = {}) {
+  const query = { doctorId };
+  if (date) query.date = date;
+  if (status) query.status = String(status).toUpperCase();
+  const [records, count] = await Promise.all([
+    db.getCollection('appointments').find(query).sort({ date: 1, time24: 1 }).skip((page - 1) * limit).limit(limit).toArray(),
+    db.getCollection('appointments').countDocuments(query),
+  ]);
+  return { count, page, limit, appointments: records.map(toView) };
+}
+
+module.exports = {
+  book,
+  getAppointment,
+  getStatus,
+  cancel,
+  reschedule,
+  listForPatient,
+  getPatientContext,
+  listForDoctor,
+  checkIn,
+  startConsultation,
+  completeConsultation,
+  toView,
+};

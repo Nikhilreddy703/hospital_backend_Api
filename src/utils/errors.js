@@ -46,6 +46,21 @@ const errors = {
     new AppError(409, 'APPOINTMENT_ALREADY_CANCELLED', `Appointment ${id} has already been cancelled.`),
   appointmentAlreadyCompleted: (id) =>
     new AppError(409, 'APPOINTMENT_ALREADY_COMPLETED', `Appointment ${id} is completed and can no longer be changed.`),
+  unauthorized: () => new AppError(401, 'UNAUTHORIZED', 'Authentication is required or the credentials are invalid.'),
+  forbidden: () => new AppError(403, 'FORBIDDEN', 'You are not authorized to perform this action.'),
+  conflict: (code, message) => new AppError(409, code, message),
+  registrationDisabled: () => new AppError(503, 'DOCTOR_REGISTRATION_DISABLED', 'Doctor registration is not configured.'),
+  doctorOnLeave: () => new AppError(409, 'DOCTOR_ON_LEAVE', 'Doctor is unavailable on the selected date.'),
+  duplicateCheckIn: () => new AppError(409, 'ALREADY_CHECKED_IN', 'This appointment has already been checked in.'),
+  notCheckedIn: () => new AppError(409, 'PATIENT_NOT_CHECKED_IN', 'The patient must check in before consultation can start.'),
+  invalidAppointmentState: (message = 'The appointment is not in a state that allows this action.') =>
+    new AppError(409, 'INVALID_APPOINTMENT_STATE', message),
+  activeAttendanceExists: () => new AppError(409, 'ALREADY_CHECKED_IN', 'There is already an active check-in for today.'),
+  noActiveAttendance: () => new AppError(409, 'NOT_CHECKED_IN', 'There is no active check-in to check out.'),
+  leaveConflict: () => new AppError(409, 'LEAVE_CONFLICT', 'An active leave already overlaps these dates.'),
+  leaveNotFound: () => new AppError(404, 'LEAVE_NOT_FOUND', 'The leave record was not found.'),
+  prescriptionExists: () => new AppError(409, 'PRESCRIPTION_EXISTS', 'A prescription already exists for this appointment.'),
+  prescriptionNotAllowed: () => new AppError(409, 'PRESCRIPTION_NOT_ALLOWED', 'A prescription can only be added during or after consultation.'),
 };
 
 module.exports = { AppError, errors };

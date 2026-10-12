@@ -2,21 +2,27 @@ const db = require('../data/db');
 const { errors } = require('../utils/errors');
 const { isValidDate, todayInIndia } = require('../utils/helpers');
 const doctorService = require('./doctor.service');
+const doctorLeaveService = require('./doctorLeave.service');
 
 const toSlotView = (s) => ({ slotId: s.slotId, date: s.date, time: s.time, status: s.status });
 
-function availableSlotsFor(doctorId) {
-  return db.data.slots
-    .filter((s) => s.doctorId === doctorId && s.status === 'AVAILABLE' && s.date >= todayInIndia())
-    .sort((a, b) => a.date.localeCompare(b.date) || a.time24.localeCompare(b.time24));
+async function availableSlotsFor(doctorId) {
+  const cutoffDate = todayInIndia();
+  const slots = db.isConnected()
+    ? await db.getCollection('slots').find({ doctorId, status: 'AVAILABLE', date: { $gte: cutoffDate } })
+      .sort({ date: 1, time24: 1 }).toArray()
+    : db.data.slots.filter((s) => s.doctorId === doctorId && s.status === 'AVAILABLE' && s.date >= cutoffDate);
+  return slots.sort((a, b) => a.date.localeCompare(b.date) || a.time24.localeCompare(b.time24));
 }
 
 /** GET /api/doctors/:id/slots?date=YYYY-MM-DD  (AVAILABLE slots only) */
-function getDoctorSlots(doctorId, date) {
+async function getDoctorSlots(doctorId, date) {
   const doctor = doctorService.getDoctor(doctorId);
   if (date !== undefined && !isValidDate(date)) throw errors.invalidDate(date);
 
-  let slots = availableSlotsFor(doctor.doctorId);
+  let slots = await availableSlotsFor(doctor.doctorId);
+  const leaves = await doctorLeaveService.listActiveForAvailability(doctor.doctorId);
+  slots = slots.filter((slot) => !leaves.some((leave) => leave.startDate <= slot.date && leave.endDate >= slot.date));
   if (date) slots = slots.filter((s) => s.date === date);
 
   return {
@@ -30,10 +36,14 @@ function getDoctorSlots(doctorId, date) {
 }
 
 /** GET /api/doctors/:id/available-dates  (helps the chatbot offer "pick a date") */
-function getAvailableDates(doctorId) {
+async function getAvailableDates(doctorId) {
   const doctor = doctorService.getDoctor(doctorId);
   const counts = {};
-  for (const s of availableSlotsFor(doctor.doctorId)) counts[s.date] = (counts[s.date] || 0) + 1;
+  const leaves = await doctorLeaveService.listActiveForAvailability(doctor.doctorId);
+  const slots = (await availableSlotsFor(doctor.doctorId)).filter((slot) =>
+    !leaves.some((leave) => leave.startDate <= slot.date && leave.endDate >= slot.date)
+  );
+  for (const s of slots) counts[s.date] = (counts[s.date] || 0) + 1;
   return {
     doctorId: doctor.doctorId,
     doctorName: doctor.name,
