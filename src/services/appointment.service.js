@@ -47,11 +47,13 @@ function assertDoctorAvailable(doctor) {
 }
 
 /** POST /api/appointments : AVAILABLE -> BOOKED */
-function book({ patientId, doctorId, slotId, reason }) {
+function book({ patientId, doctorId, slotId, date, time, reason }) {
   const doctor = doctorService.getDoctor(doctorId);
   const patient = patientService.getPatient(patientId);
   assertDoctorAvailable(doctor);
-  const slot = slotService.findSlotForDoctor(slotId, doctor.doctorId);
+  const slot = slotId
+    ? slotService.findSlotForDoctor(slotId, doctor.doctorId)
+    : slotService.findSlotByDateTime(date, time, doctor.doctorId);
   if (slot.status !== 'AVAILABLE') throw errors.slotAlreadyBooked();
 
   const now = nowIso();

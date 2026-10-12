@@ -284,14 +284,14 @@ paths:
     post:
       tags: [Appointments]
       summary: Book an appointment (slot AVAILABLE -> BOOKED)
-      description: Validates that the doctor and patient exist, the slot belongs to the doctor and is still available.
+      description: Provide either slotId or both date and time. The API checks that the selected slot belongs to the doctor and is still available.
       operationId: bookAppointment
       requestBody:
         required: true
         content:
           application/json:
             schema: { $ref: '#/components/schemas/BookingRequest' }
-            example: { patientId: PAT001, doctorId: DOC001, slotId: S0026, reason: Chest discomfort }
+            example: { patientId: PAT001, doctorId: DOC001, date: '2026-10-10', time: '10:30 AM', reason: Chest discomfort }
       responses:
         '201':
           description: Appointment confirmed
@@ -576,11 +576,14 @@ components:
         email: { type: string, nullable: true }
     BookingRequest:
       type: object
-      required: [patientId, doctorId, slotId]
+      required: [patientId, doctorId]
+      description: Provide either slotId or both date and time.
       properties:
         patientId: { type: string, example: PAT001 }
         doctorId: { type: string, example: DOC001 }
-        slotId: { type: string, example: S0026 }
+        slotId: { type: string, description: Use this or both date and time., example: S0026 }
+        date: { type: string, format: date, description: Required with time when slotId is omitted., example: '2026-10-10' }
+        time: { type: string, description: Required with date when slotId is omitted. Accepts HH:mm or h:mm AM/PM., example: '10:30 AM' }
         reason: { type: string, maxLength: 200, example: Chest discomfort }
     RescheduleRequest:
       type: object

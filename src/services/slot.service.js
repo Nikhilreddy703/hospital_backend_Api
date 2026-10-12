@@ -49,4 +49,24 @@ function findSlotForDoctor(slotId, doctorId) {
   return slot;
 }
 
-module.exports = { getDoctorSlots, getAvailableDates, findSlotForDoctor };
+function findSlotByDateTime(date, time, doctorId) {
+  const normalizedTime = normalizeTime(time);
+  const slot = db.data.slots.find((item) =>
+    item.doctorId === doctorId && item.date === date && item.time24 === normalizedTime
+  );
+  if (!slot) throw errors.slotNotFound(`${date} ${time}`, doctorId);
+  return slot;
+}
+
+function normalizeTime(value) {
+  const time = value.trim().toUpperCase().replace(/\s+/g, ' ');
+  const twelveHour = time.match(/^(\d{1,2}):(\d{2})\s?(AM|PM)$/);
+  if (twelveHour) {
+    let hours = Number(twelveHour[1]) % 12;
+    if (twelveHour[3] === 'PM') hours += 12;
+    return `${String(hours).padStart(2, '0')}:${twelveHour[2]}`;
+  }
+  return time;
+}
+
+module.exports = { getDoctorSlots, getAvailableDates, findSlotForDoctor, findSlotByDateTime };
