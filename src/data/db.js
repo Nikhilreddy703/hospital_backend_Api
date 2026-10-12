@@ -2,6 +2,7 @@ const fs = require('fs');
 const { MongoClient } = require('mongodb');
 const config = require('../utils/config');
 const { buildSeedData } = require('./seed');
+const { todayInIndia } = require('../utils/helpers');
 
 let state = null;
 let client = null;
@@ -109,12 +110,50 @@ async function close() {
   if (client) await client.close();
 }
 
+async function prunePastAvailableSlots() {
+  if (!state) load();
+  const cutoffDate = todayInIndia();
+
+  if (!collections || !config.persist) {
+    const before = state.slots.length;
+    state.slots = state.slots.filter((slot) => slot.status !== 'AVAILABLE' || slot.date >= cutoffDate);
+    const removed = before - state.slots.length;
+    if (removed) save();
+    return removed;
+  }
+
+  const operation = pendingWrite.then(async () => {
+    const expiredIds = state.slots
+      .filter((slot) => slot.status === 'AVAILABLE' && slot.date < cutoffDate)
+      .map((slot) => slot.slotId);
+    if (!expiredIds.length) return 0;
+
+    await collections.slots.deleteMany({
+      slotId: { $in: expiredIds },
+      status: 'AVAILABLE',
+      date: { $lt: cutoffDate },
+    });
+
+    const expired = new Set(expiredIds);
+    const before = state.slots.length;
+    state.slots = state.slots.filter((slot) =>
+      !expired.has(slot.slotId) || slot.status !== 'AVAILABLE' || slot.date >= cutoffDate
+    );
+    return before - state.slots.length;
+  });
+  pendingWrite = operation.catch((error) => {
+    console.error('Could not prune past available slots:', error.message);
+  });
+  return operation;
+}
+
 module.exports = {
   load,
   save,
   reset,
   connect,
   close,
+  prunePastAvailableSlots,
   get data() {
     return load();
   },

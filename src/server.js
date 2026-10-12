@@ -4,6 +4,18 @@ const db = require('./data/db');
 
 async function start() {
   await db.connect();
+  const prunePastSlots = async () => {
+    try {
+      const removed = await db.prunePastAvailableSlots();
+      if (removed) console.log(`Removed ${removed} past available slot(s).`);
+    } catch (error) {
+      console.error('Past-slot cleanup will retry later:', error.message);
+    }
+  };
+  await prunePastSlots();
+  const cleanupTimer = setInterval(prunePastSlots, 60 * 60 * 1000);
+  cleanupTimer.unref();
+
   app.listen(config.port, () => {
     console.log(`Hospital mock backend running on http://localhost:${config.port}`);
     console.log(`Swagger UI:  http://localhost:${config.port}/api-docs`);
