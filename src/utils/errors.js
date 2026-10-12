@@ -44,6 +44,8 @@ const errors = {
     new AppError(409, 'DOCTOR_UNAVAILABLE', `${name} is currently not available for appointments.`),
   appointmentAlreadyCancelled: (id) =>
     new AppError(409, 'APPOINTMENT_ALREADY_CANCELLED', `Appointment ${id} has already been cancelled.`),
+  appointmentAlreadyCompleted: (id) =>
+    new AppError(409, 'APPOINTMENT_ALREADY_COMPLETED', `Appointment ${id} is completed and can no longer be changed.`),
 };
 
 module.exports = { AppError, errors };

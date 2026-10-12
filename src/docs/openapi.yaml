@@ -244,7 +244,7 @@ paths:
       operationId: getPatientAppointments
       parameters:
         - { $ref: '#/components/parameters/PatientId' }
-        - { name: status, in: query, schema: { type: string, enum: [CONFIRMED, CANCELLED] } }
+        - { name: status, in: query, schema: { type: string, enum: [CONFIRMED, CANCELLED, COMPLETED] } }
       responses:
         '200':
           description: Appointments sorted by date and time
@@ -268,7 +268,7 @@ paths:
       parameters: [{ $ref: '#/components/parameters/PatientId' }]
       responses:
         '200':
-          description: Patient with confirmed and cancelled appointments
+          description: Patient with confirmed, cancelled, and completed appointments
           content:
             application/json:
               schema:
@@ -278,6 +278,7 @@ paths:
                   patient: { $ref: '#/components/schemas/Patient' }
                   confirmedAppointments: { type: array, items: { $ref: '#/components/schemas/Appointment' } }
                   cancelledAppointments: { type: array, items: { $ref: '#/components/schemas/Appointment' } }
+                  completedAppointments: { type: array, items: { $ref: '#/components/schemas/Appointment' } }
         '404': { $ref: '#/components/responses/NotFound' }
 
   /api/appointments:
@@ -596,7 +597,7 @@ components:
       properties:
         success: { type: boolean, example: true }
         appointmentId: { type: string, example: APT10001 }
-        status: { type: string, enum: [CONFIRMED, CANCELLED] }
+        status: { type: string, enum: [CONFIRMED, CANCELLED, COMPLETED] }
         patientId: { type: string, example: PAT001 }
         patientName: { type: string, example: Aarav Demo }
         doctorId: { type: string, example: DOC001 }

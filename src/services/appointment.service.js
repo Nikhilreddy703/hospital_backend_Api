@@ -95,6 +95,7 @@ function getStatus(id) {
 function cancel(id, reason) {
   const appt = findAppointment(id);
   if (appt.status === STATUS.CANCELLED) throw errors.appointmentAlreadyCancelled(appt.appointmentId);
+  if (appt.status === STATUS.COMPLETED) throw errors.appointmentAlreadyCompleted(appt.appointmentId);
 
   const slot = db.data.slots.find((s) => s.slotId === appt.slotId);
   if (slot) slot.status = 'AVAILABLE';
@@ -113,6 +114,7 @@ function cancel(id, reason) {
 function reschedule(id, { slotId, doctorId }) {
   const appt = findAppointment(id);
   if (appt.status === STATUS.CANCELLED) throw errors.appointmentAlreadyCancelled(appt.appointmentId);
+  if (appt.status === STATUS.COMPLETED) throw errors.appointmentAlreadyCompleted(appt.appointmentId);
 
   const doctor = doctorService.getDoctor(doctorId || appt.doctorId);
   assertDoctorAvailable(doctor);
@@ -138,7 +140,7 @@ function reschedule(id, { slotId, doctorId }) {
   return { appointment: toView(appt), previous };
 }
 
-/** GET /api/patients/:id/appointments?status=CONFIRMED|CANCELLED */
+/** GET /api/patients/:id/appointments?status=CONFIRMED|CANCELLED|COMPLETED */
 function listForPatient(patientId, status) {
   const patient = patientService.getPatient(patientId);
   if (status !== undefined && !Object.values(STATUS).includes(String(status).toUpperCase())) {
@@ -159,6 +161,7 @@ function getPatientContext(patientId) {
     patient,
     confirmedAppointments: all.filter((a) => a.status === STATUS.CONFIRMED),
     cancelledAppointments: all.filter((a) => a.status === STATUS.CANCELLED),
+    completedAppointments: all.filter((a) => a.status === STATUS.COMPLETED),
   };
 }
 

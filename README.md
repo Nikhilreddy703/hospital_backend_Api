@@ -66,6 +66,7 @@ To reset data while the server is running: `POST /api/admin/reset-demo-data`
 - 8 slots per doctor per day (10:00, 10:30, 11:00, 11:30, 2:00, 2:30, 3:00, 3:30 PM) for 2026-10-07 → 2026-10-20, Sundays excluded
 - 5 patients `PAT001`–`PAT005`
 - 6 appointments `APT10001`–`APT10006` (one is `CANCELLED`)
+- Confirmed appointments automatically become `COMPLETED` after their scheduled date and time in India time; completion is checked at startup and once per minute.
 
 Handy test values: doctor `DOC001`, date `2026-10-10`, slot `S0026` (10:30 AM), patient `PAT001`.
 

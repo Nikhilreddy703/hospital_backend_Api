@@ -2,7 +2,7 @@ const fs = require('fs');
 const { MongoClient } = require('mongodb');
 const config = require('../utils/config');
 const { buildSeedData } = require('./seed');
-const { todayInIndia } = require('../utils/helpers');
+const { todayInIndia, isPastAppointmentTime, nowIso } = require('../utils/helpers');
 
 let state = null;
 let client = null;
@@ -147,6 +147,53 @@ async function prunePastAvailableSlots() {
   return operation;
 }
 
+async function completePastAppointments() {
+  if (!state) load();
+
+  if (!collections || !config.persist) {
+    const completedAt = nowIso();
+    const pastAppointments = state.appointments.filter((appointment) =>
+      appointment.status === 'CONFIRMED' && isPastAppointmentTime(appointment.date, appointment.time24)
+    );
+    for (const appointment of pastAppointments) {
+      appointment.status = 'COMPLETED';
+      appointment.updatedAt = completedAt;
+    }
+    if (pastAppointments.length) save();
+    return pastAppointments.length;
+  }
+
+  const operation = pendingWrite.then(async () => {
+    const completedAt = nowIso();
+    const pastAppointments = state.appointments.filter((appointment) =>
+      appointment.status === 'CONFIRMED' && isPastAppointmentTime(appointment.date, appointment.time24)
+    );
+    let changed = 0;
+
+    for (const appointment of pastAppointments) {
+      const result = await collections.appointments.updateOne(
+        {
+          appointmentId: appointment.appointmentId,
+          status: 'CONFIRMED',
+          date: appointment.date,
+          time24: appointment.time24,
+        },
+        { $set: { status: 'COMPLETED', updatedAt: completedAt } }
+      );
+      if (result.matchedCount && appointment.status === 'CONFIRMED') {
+        appointment.status = 'COMPLETED';
+        appointment.updatedAt = completedAt;
+        changed += 1;
+      }
+    }
+    return changed;
+  });
+  pendingWrite = operation.catch((error) => {
+    console.error('Could not complete past appointments:', error.message);
+  });
+  return operation;
+}
+
 module.exports = {
   load,
   save,
@@ -154,6 +201,7 @@ module.exports = {
   connect,
   close,
   prunePastAvailableSlots,
+  completePastAppointments,
   get data() {
     return load();
   },

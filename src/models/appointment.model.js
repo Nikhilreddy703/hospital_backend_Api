@@ -1,7 +1,7 @@
 const { errors } = require('../utils/errors');
 const { isValidDate } = require('../utils/helpers');
 
-const STATUS = { CONFIRMED: 'CONFIRMED', CANCELLED: 'CANCELLED' };
+const STATUS = { CONFIRMED: 'CONFIRMED', CANCELLED: 'CANCELLED', COMPLETED: 'COMPLETED' };
 
 const isNonEmptyString = (v) => typeof v === 'string' && v.trim().length > 0;
 

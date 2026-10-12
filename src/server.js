@@ -12,9 +12,20 @@ async function start() {
       console.error('Past-slot cleanup will retry later:', error.message);
     }
   };
+  const completePastAppointments = async () => {
+    try {
+      const completed = await db.completePastAppointments();
+      if (completed) console.log(`Marked ${completed} past appointment(s) as completed.`);
+    } catch (error) {
+      console.error('Past-appointment completion will retry later:', error.message);
+    }
+  };
   await prunePastSlots();
   const cleanupTimer = setInterval(prunePastSlots, 60 * 60 * 1000);
   cleanupTimer.unref();
+  await completePastAppointments();
+  const completionTimer = setInterval(completePastAppointments, 60 * 1000);
+  completionTimer.unref();
 
   app.listen(config.port, () => {
     console.log(`Hospital mock backend running on http://localhost:${config.port}`);

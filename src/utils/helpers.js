@@ -18,6 +18,25 @@ function todayInIndia() {
 
 const isPastDate = (date) => date < todayInIndia();
 
+function currentDateTimeInIndia() {
+  const parts = new Intl.DateTimeFormat('en', {
+    timeZone: 'Asia/Kolkata',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(new Date());
+  const values = Object.fromEntries(parts.map(({ type, value }) => [type, value]));
+  return `${values.year}-${values.month}-${values.day}T${values.hour}:${values.minute}:${values.second}`;
+}
+
+const isPastAppointmentTime = (date, time24) =>
+  typeof date === 'string' && /^\d{2}:\d{2}$/.test(time24 || '') &&
+  `${date}T${time24}:00` < currentDateTimeInIndia();
+
 /** "14:30" -> "2:30 PM" */
 const to12h = (t) => {
   const [h, m] = t.split(':').map(Number);
@@ -28,4 +47,14 @@ const normalize = (s) => String(s).trim().toLowerCase();
 const nowIso = () => new Date().toISOString();
 const pad = (n, len) => String(n).padStart(len, '0');
 
-module.exports = { isValidDate, isPastDate, todayInIndia, to12h, normalize, nowIso, pad };
+module.exports = {
+  isValidDate,
+  isPastDate,
+  isPastAppointmentTime,
+  todayInIndia,
+  currentDateTimeInIndia,
+  to12h,
+  normalize,
+  nowIso,
+  pad,
+};
