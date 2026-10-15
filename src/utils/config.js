@@ -15,6 +15,8 @@ module.exports = {
   persist: process.env.PERSIST_DB !== 'false',
   jwtSecret: process.env.JWT_SECRET || '',
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || '8h',
+  hospitalTimezone: process.env.HOSPITAL_TIMEZONE || 'Asia/Kolkata',
+  staffProvisioningKey: process.env.STAFF_PROVISIONING_KEY || '',
   doctorRegistrationKey: process.env.DOCTOR_REGISTRATION_KEY || '',
   corsOrigins,
   seedStartDate: process.env.SEED_START_DATE || '2026-10-07',

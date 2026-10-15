@@ -247,7 +247,10 @@ describe('Patient check-in and consultation workflow', () => {
   });
 
   test('marks appointments past their scheduled time completed with a completion timestamp', async () => {
-    const appointment = db.data.appointments.find((item) => item.status === 'CONFIRMED');
+    const appointment = db.data.appointments.find((item) => item.status === 'CONFIRMED') || {
+      appointmentId: 'APTTESTPAST', patientId: 'PAT001', doctorId: 'DOC001', slotId: 'TESTPAST',
+      date: '2000-01-01', time24: '10:00', status: 'CONFIRMED',
+    };
     db.data.appointments = [appointment];
     appointment.date = '2000-01-01';
     appointment.time24 = '10:00';

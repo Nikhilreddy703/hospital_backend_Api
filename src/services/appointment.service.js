@@ -29,6 +29,8 @@ function toView(a) {
     reason: a.reason,
     patientCheckIn: a.patientCheckIn || { status: 'NOT_CHECKED_IN', checkInTime: null },
     consultation: a.consultation || { status: 'NOT_STARTED', startedAt: null, completedAt: null },
+    noShowAt: a.noShowAt || null,
+    noShowBy: a.noShowBy || null,
     prescriptionId: a.prescriptionId || null,
     createdAt: a.createdAt,
     updatedAt: a.updatedAt,
@@ -120,7 +122,7 @@ function getStatus(id) {
 
 async function checkIn(id) {
   const appointment = findAppointment(id);
-  if (appointment.status === STATUS.CANCELLED || appointment.status === STATUS.COMPLETED) {
+  if (appointment.status === STATUS.CANCELLED || appointment.status === STATUS.COMPLETED || appointment.status === STATUS.NO_SHOW) {
     throw errors.invalidAppointmentState('This appointment cannot be checked in.');
   }
   if (appointment.patientCheckIn && appointment.patientCheckIn.status === 'CHECKED_IN') throw errors.duplicateCheckIn();
@@ -171,6 +173,7 @@ async function cancel(id, reason) {
   const appt = findAppointment(id);
   if (appt.status === STATUS.CANCELLED) throw errors.appointmentAlreadyCancelled(appt.appointmentId);
   if (appt.status === STATUS.COMPLETED) throw errors.appointmentAlreadyCompleted(appt.appointmentId);
+  if (appt.status === STATUS.NO_SHOW) throw errors.invalidAppointmentState('A no-show appointment cannot be cancelled.');
   if (appt.status === STATUS.IN_CONSULTATION) throw errors.invalidAppointmentState('An active consultation cannot be cancelled.');
 
   const slot = db.data.slots.find((s) => s.slotId === appt.slotId);
@@ -191,6 +194,7 @@ async function reschedule(id, { slotId, doctorId }) {
   const appt = findAppointment(id);
   if (appt.status === STATUS.CANCELLED) throw errors.appointmentAlreadyCancelled(appt.appointmentId);
   if (appt.status === STATUS.COMPLETED) throw errors.appointmentAlreadyCompleted(appt.appointmentId);
+  if (appt.status === STATUS.NO_SHOW) throw errors.invalidAppointmentState('A no-show appointment cannot be rescheduled.');
   if (appt.status === STATUS.PATIENT_CHECKED_IN || appt.status === STATUS.IN_CONSULTATION) {
     throw errors.invalidAppointmentState('A checked-in appointment cannot be rescheduled.');
   }
@@ -285,4 +289,5 @@ module.exports = {
   startConsultation,
   completeConsultation,
   toView,
+  findAppointment,
 };

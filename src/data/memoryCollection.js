@@ -7,6 +7,7 @@ function pathValue(document, path) {
 function compare(value, operator, expected) {
   if (operator === '$eq') return value === expected || (value == null && expected == null);
   if (operator === '$in') return expected.some((item) => value === item || (value == null && item == null));
+  if (operator === '$ne') return value !== expected;
   if (operator === '$lte') return value != null && value <= expected;
   if (operator === '$gte') return value != null && value >= expected;
   if (operator === '$lt') return value != null && value < expected;
@@ -126,15 +127,19 @@ function createMemoryCollection(documents) {
       for (const stage of pipeline) {
         if (stage.$match) result = result.filter((document) => matches(document, stage.$match));
         if (stage.$group) {
-          const group = {};
+          const groups = new Map();
           for (const document of result) {
+            const id = expression(document, stage.$group._id);
+            const key = JSON.stringify(id);
+            if (!groups.has(key)) groups.set(key, { _id: id });
+            const group = groups.get(key);
             for (const [field, accumulator] of Object.entries(stage.$group)) {
-              if (field === '_id') continue;
-              if ('$sum' in accumulator) group[field] = (group[field] || 0) + Number(expression(document, accumulator.$sum));
+              if (field !== '_id' && '$sum' in accumulator) group[field] = (group[field] || 0) + Number(expression(document, accumulator.$sum));
             }
           }
-          result = result.length ? [{ _id: stage.$group._id, ...group }] : [];
+          result = [...groups.values()];
         }
+        if (stage.$sort) result = [...result].sort((left,right)=>{for(const [field,direction] of Object.entries(stage.$sort)){if(left[field]<right[field])return -direction;if(left[field]>right[field])return direction;}return 0;});
       }
       return { async toArray() { return result; } };
     },

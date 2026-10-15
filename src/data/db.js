@@ -116,6 +116,9 @@ async function ensureIndexes() {
     database.collection('doctor_leaves').createIndex({ doctorId: 1, status: 1, startDate: 1, endDate: 1 }, { name: 'doctor_leave_dates' }),
     database.collection('prescriptions').createIndex({ appointmentId: 1 }, { unique: true, name: 'prescription_appointment_unique' }),
     database.collection('prescriptions').createIndex({ doctorId: 1, createdAt: -1 }, { name: 'prescriptions_doctor_created' }),
+    database.collection('staff').createIndex({ email: 1 }, { unique: true, name: 'staff_email_unique' }),
+    database.collection('staff').createIndex({ staffId: 1 }, { unique: true, name: 'staff_id_unique' }),
+    database.collection('appointments').createIndex({ status: 1, date: 1 }, { name: 'appointments_status_date' }),
   ]);
 }
 

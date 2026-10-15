@@ -47,6 +47,10 @@ exports.cancel = asyncHandler(async (req, res) => {
 });
 
 exports.checkIn = asyncHandler(async (req, res) => {
+  if (req.staff) {
+    const appointment = await require('../services/staffPortal.service').checkIn(validateAppointmentId(req.params.id), req.staff);
+    return res.json({ success: true, message: 'Patient checked in successfully.', data: appointment });
+  }
   const appointment = await appointmentService.checkIn(validateAppointmentId(req.params.id));
   res.json({
     success: true,
@@ -57,6 +61,16 @@ exports.checkIn = asyncHandler(async (req, res) => {
       checkInTime: appointment.patientCheckIn.checkInTime,
     },
   });
+});
+
+exports.staffCheckIn = asyncHandler(async (req,res)=>{
+  const data=await require('../services/staffPortal.service').checkIn(validateAppointmentId(req.params.id),req.staff);
+  res.json({success:true,message:'Patient checked in successfully.',data});
+});
+
+exports.noShow = asyncHandler(async(req,res)=>{
+  const data=await require('../services/staffPortal.service').noShow(validateAppointmentId(req.params.id),req.staff,req.body?.confirmed);
+  res.json({success:true,message:'Appointment marked no-show.',data});
 });
 
 exports.startConsultation = asyncHandler(async (req, res) => {

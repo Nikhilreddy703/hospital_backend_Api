@@ -7,6 +7,7 @@ const STATUS = {
   IN_CONSULTATION: 'IN_CONSULTATION',
   CANCELLED: 'CANCELLED',
   COMPLETED: 'COMPLETED',
+  NO_SHOW: 'NO_SHOW',
 };
 
 const isNonEmptyString = (v) => typeof v === 'string' && v.trim().length > 0;

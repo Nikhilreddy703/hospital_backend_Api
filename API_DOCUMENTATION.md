@@ -111,3 +111,43 @@ PORT=<provided by Render>
 ```
 
 `CORS_ORIGIN` accepts a comma-separated list. Local development defaults to `http://localhost:3000,http://localhost:5173`. `.env` is not committed. `ENABLE_ADMIN_RESET` defaults to false; if explicitly enabled, a separate `ADMIN_RESET_TOKEN` is required in `x-admin-reset-token`.
+# Staff access and operational APIs
+
+All staff endpoints use `Authorization: Bearer <staff-token>`. Roles are loaded from the staff record on every request; token or request body roles are not trusted. Staff logout is stateless and instructs the client to discard its token.
+
+## Staff authentication and provisioning
+
+- `POST /api/staff/auth/bootstrap-admin` — one-time initial ADMIN setup. Requires `x-staff-provisioning-key` matching `STAFF_PROVISIONING_KEY`. Body: `{ "name": "Hospital Admin", "email": "admin@example.com", "phone": "...", "password": "at-least-12-chars", "role": "ADMIN" }`. It fails once any staff account exists.
+- `POST /api/staff/auth/login` — `{ "email": "...", "password": "..." }`; returns a bearer token and safe staff profile.
+- `GET /api/staff/me`, `POST /api/staff/auth/logout` — any authenticated staff account.
+- `POST /api/staff` — ADMIN only; same body fields, role may be `ADMIN`, `RECEPTION`, or `MEDICAL_CENTER`.
+
+Passwords are bcrypt hashed. Set `JWT_SECRET`, `JWT_EXPIRES_IN`, `STAFF_PROVISIONING_KEY`, and `HOSPITAL_TIMEZONE`. Initial administrator provisioning requires an empty staff collection and the provisioning key. Store that key securely and remove/rotate it after bootstrap.
+
+## Admin
+
+All `/api/admin` routes require ADMIN:
+
+- `GET /api/admin/dashboard` — actual same-day counts, active doctor state, and available/booked slots.
+- `GET /api/admin/analytics?startDate=YYYY-MM-DD&endDate=YYYY-MM-DD` — status, doctor, specialization and daily appointment summaries, and slot utilization.
+- `GET /api/admin/appointments` — appointment listing; supports `date`, `status`, `doctorId`, `appointmentId`, `patient`, `page`, and `limit`.
+- `GET /api/admin/doctors`, `/doctors/availability?date=YYYY-MM-DD`, `/doctors/on-leave`, `/staff`.
+- `POST /api/admin/doctors/:doctorId/leave` — `{ "startDate": "YYYY-MM-DD", "endDate": "YYYY-MM-DD", "reason": "..." }`. Returns 409 with conflicting appointment references instead of creating leave when scheduled appointments overlap.
+
+## Reception
+
+RECEPTION and ADMIN can call `GET /api/reception/appointments` with date/status/doctorId/appointmentId/patient/page/limit filters. It returns patient ID and name with appointment details.
+
+- `POST /api/appointments/:appointmentId/check-in` — reception token for staff check-in; the legacy no-token patient-portal behavior remains for compatibility. Only today's confirmed appointments can be checked in by reception. Writes server timestamp and `staffId`, and preserves the original `doctorId`. A previously checked-in appointment is returned without creating another check-in. `/reception-check-in` is an explicit reception-only alias.
+- `POST /api/appointments/:appointmentId/no-show` — reception token, body `{ "confirmed": true }`. Only a confirmed, not checked-in appointment at least 30 minutes past its scheduled time in `HOSPITAL_TIMEZONE` qualifies. The operation uses a conditional MongoDB update and records `noShowAt` and `noShowBy`.
+
+Legacy patient portal `POST /api/appointments/:appointmentId/check-in` remains available for compatibility. Doctor appointment and consultation APIs continue to scope records to the doctor from the JWT.
+
+## Medical center
+
+MEDICAL_CENTER and ADMIN can call `GET /api/medical-center/completed-appointments` with `appointmentId`, `patient`, `doctorId`, `startDate`, `endDate`, and `prescriptionStatus=ADDED|MISSING` filters, and `GET /api/medical-center/appointments/:appointmentId/prescription`. Prescription details are read-only; completed appointments without a prescription return `data: null` and an explanatory message.
+
+## Appointment states
+
+`CONFIRMED -> PATIENT_CHECKED_IN -> IN_CONSULTATION -> COMPLETED`. Confirmed appointments may become `CANCELLED` through the existing cancellation API or `NO_SHOW` by explicit reception confirmation after the 30-minute threshold. No-show, cancelled, completed, checked-in, and in-consultation appointments are not eligible for no-show. Doctor reassignment is not performed by check-in or leave handling.
+
