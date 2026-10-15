@@ -61,6 +61,7 @@ async function book({ patientId, doctorId, slotId, date, time, reason }) {
   const doctor = doctorService.getDoctor(doctorId);
   const patient = patientService.getPatient(patientId);
   assertDoctorAvailable(doctor);
+  await slotService.ensureDoctorSlots(doctor.doctorId);
   const slot = slotId
     ? slotService.findSlotForDoctor(slotId, doctor.doctorId)
     : slotService.findSlotByDateTime(date, time, doctor.doctorId);

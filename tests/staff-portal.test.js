@@ -51,3 +51,23 @@ test('no-show requires explicit confirmation and waits 30 minutes',async()=>{
   const done=await request(app).post(`/api/appointments/${a.appointmentId}/no-show`).set(headers).send({confirmed:true});
   expect(done.status).toBe(200);expect(done.body.data.status).toBe('NO_SHOW');expect(done.body.data.noShowBy).toBe(staffResponse.body.data.staff.staffId);
 });
+
+test('creates idempotent slots for a restored doctor, excludes leave dates, and permits booking while checked in',async()=>{
+  const doctor=db.data.doctors.find(d=>d.doctorId==='DOC012');
+  doctor.availabilityStatus='AVAILABLE';doctor.status='CHECKED_IN';
+  const leaveDateValue=new Date(`${today}T00:00:00Z`);leaveDateValue.setUTCDate(leaveDateValue.getUTCDate()+1);
+  while(leaveDateValue.getUTCDay()===0)leaveDateValue.setUTCDate(leaveDateValue.getUTCDate()+1);
+  const leaveDate=leaveDateValue.toISOString().slice(0,10);
+  await db.getCollection('doctor_leaves').insertOne({doctorId:'DOC012',startDate:leaveDate,endDate:leaveDate,status:'ACTIVE'});
+  await require('../src/services/slot.service').ensureDoctorSlots('DOC012');
+  const first=await request(app).get('/api/doctors/DOC012/slots');
+  expect(first.status).toBe(200);expect(first.body.totalAvailable).toBeGreaterThan(0);
+  const countBefore=db.data.slots.filter(s=>s.doctorId==='DOC012').length;
+  await request(app).get('/api/doctors/DOC012/slots');
+  expect(db.data.slots.filter(s=>s.doctorId==='DOC012')).toHaveLength(countBefore);
+  const leaveSlots=await request(app).get('/api/doctors/DOC012/slots').query({date:leaveDate});
+  expect(leaveSlots.body.totalAvailable).toBe(0);
+  const slot=first.body.availableSlots[0];
+  const booked=await request(app).post('/api/appointments').send({patientId:'PAT001',doctorId:'DOC012',slotId:slot.slotId});
+  expect(booked.status).toBe(201);expect(booked.body.doctorId).toBe('DOC012');
+});

@@ -2,9 +2,12 @@ const app = require('./app');
 const config = require('./utils/config');
 const db = require('./data/db');
 const doctorLeaveService = require('./services/doctorLeave.service');
+const slotService = require('./services/slot.service');
 
 async function start() {
   await db.connect();
+  const createdSlots = await slotService.ensureAvailableDoctorSlots();
+  if (createdSlots) console.log(`Created ${createdSlots} appointment slot(s) for available doctors.`);
   const prunePastSlots = async () => {
     try {
       const removed = await db.prunePastAvailableSlots();

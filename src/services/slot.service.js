@@ -3,6 +3,53 @@ const { errors } = require('../utils/errors');
 const { isValidDate, todayInIndia } = require('../utils/helpers');
 const doctorService = require('./doctor.service');
 const doctorLeaveService = require('./doctorLeave.service');
+const config = require('../utils/config');
+
+const SLOT_TIMES = ['10:00', '10:30', '11:00', '11:30', '14:00', '14:30', '15:00', '15:30'];
+
+/** Fill the configured booking window for an available doctor without replacing existing slots. */
+async function ensureDoctorSlots(doctorId) {
+  const doctor = doctorService.getDoctor(doctorId);
+  if (doctor.isActive === false || doctor.availabilityStatus !== 'AVAILABLE' || ['OFFLINE', 'ON_LEAVE'].includes(doctor.status)) return 0;
+
+  const leaves = await doctorLeaveService.listActiveForAvailability(doctor.doctorId);
+  const start = new Date(`${todayInIndia()}T00:00:00Z`);
+  const days = Math.max(1, Math.min(Number(config.seedDays) || 14, 90));
+  const collection = db.getCollection('slots');
+  const created = [];
+  const operations = [];
+  for (let offset = 0; offset < days; offset += 1) {
+    const day = new Date(start.getTime() + offset * 86400000);
+    if (day.getUTCDay() === 0) continue;
+    const date = day.toISOString().slice(0, 10);
+    if (leaves.some((leave) => leave.startDate <= date && leave.endDate >= date)) continue;
+    for (const time24 of SLOT_TIMES) {
+      const slotId = `S-${doctor.doctorId}-${date.replace(/-/g, '')}-${time24.replace(':', '')}`;
+      const slot = { slotId, doctorId: doctor.doctorId, date, time24, time: require('../utils/helpers').to12h(time24), status: 'AVAILABLE' };
+      operations.push({ slot, run: () => collection.updateOne(
+        { doctorId: slot.doctorId, date: slot.date, time24: slot.time24 },
+        { $setOnInsert: slot },
+        { upsert: true }
+      ) });
+    }
+  }
+  for (let index = 0; index < operations.length; index += 32) {
+    const batch = await Promise.all(operations.slice(index, index + 32).map(async ({ slot, run }) => {
+      try { return { slot, result: await run() }; }
+      catch (error) { if (error.code === 11000) return { slot, result: null }; throw error; }
+    }));
+    for (const { slot, result } of batch) if (result?.upsertedId) created.push(slot);
+  }
+
+  // The application keeps a local mirror for its existing booking services.
+  const current = db.isConnected()
+    ? await collection.find({ doctorId: doctor.doctorId, date: { $gte: todayInIndia() } }).toArray()
+    : await collection.find({ doctorId: doctor.doctorId }).toArray();
+  const byId = new Map(db.data.slots.map((slot) => [slot.slotId, slot]));
+  for (const slot of current) byId.set(slot.slotId, slot);
+  db.data.slots = [...byId.values()];
+  return created.length;
+}
 
 const toSlotView = (s) => ({ slotId: s.slotId, date: s.date, time: s.time, status: s.status });
 
@@ -52,6 +99,15 @@ async function getAvailableDates(doctorId) {
   };
 }
 
+async function ensureAvailableDoctorSlots() {
+  let created = 0;
+  for (const doctor of db.data.doctors) {
+    if (doctor.isActive === false || doctor.availabilityStatus !== 'AVAILABLE' || ['OFFLINE', 'ON_LEAVE'].includes(doctor.status)) continue;
+    created += await ensureDoctorSlots(doctor.doctorId);
+  }
+  return created;
+}
+
 /** Internal: find a slot and make sure it belongs to the given doctor. */
 function findSlotForDoctor(slotId, doctorId) {
   const slot = db.data.slots.find((s) => s.slotId === String(slotId).toUpperCase() && s.doctorId === doctorId);
@@ -79,4 +135,4 @@ function normalizeTime(value) {
   return time;
 }
 
-module.exports = { getDoctorSlots, getAvailableDates, findSlotForDoctor, findSlotByDateTime };
+module.exports = { getDoctorSlots, getAvailableDates, findSlotForDoctor, findSlotByDateTime, ensureDoctorSlots, ensureAvailableDoctorSlots };

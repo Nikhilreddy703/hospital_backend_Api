@@ -151,3 +151,5 @@ MEDICAL_CENTER and ADMIN can call `GET /api/medical-center/completed-appointment
 
 `CONFIRMED -> PATIENT_CHECKED_IN -> IN_CONSULTATION -> COMPLETED`. Confirmed appointments may become `CANCELLED` through the existing cancellation API or `NO_SHOW` by explicit reception confirmation after the 30-minute threshold. No-show, cancelled, completed, checked-in, and in-consultation appointments are not eligible for no-show. Doctor reassignment is not performed by check-in or leave handling.
 
+Available doctors receive missing slots during server startup and before booking, using the existing weekday schedule (10:00, 10:30, 11:00, 11:30, 14:00, 14:30, 15:00, 15:30) across the configured `SEED_DAYS` booking window. Generation is idempotent and does not overwrite booked slots. Inactive doctors, doctors marked offline/on leave, Sundays, and dates covered by active leave records are skipped. After manually changing doctor availability in MongoDB, restart the backend so it reloads the doctor record and runs slot generation.
+
