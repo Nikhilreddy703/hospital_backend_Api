@@ -9,7 +9,7 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 function safeDoctor(doctor) {
   if (!doctor) return null;
-  const { passwordHash, ...publicDoctor } = doctor;
+  const { passwordHash, authVersion, ...publicDoctor } = doctor;
   return publicDoctor;
 }
 
@@ -25,6 +25,27 @@ function validateCredentials({ email, password, doctorId }) {
     issues.push({ field: 'password', message: 'Password must be 12-128 characters.' });
   }
   if (issues.length) throw errors.validation(issues);
+}
+
+function issueToken(doctor) {
+  return jwt.sign({ role: 'doctor', ver: doctor.authVersion || 0 }, config.jwtSecret, {
+    subject: doctor.doctorId, expiresIn: config.jwtExpiresIn, algorithm: 'HS256',
+  });
+}
+
+async function changePassword(doctorId, currentPassword, newPassword) {
+  if (typeof currentPassword !== 'string' || !currentPassword || typeof newPassword !== 'string' || newPassword.length < 12 || newPassword.length > 128) {
+    throw errors.validation([{ field: 'password', message: 'Provide currentPassword and a newPassword of 12-128 characters.' }]);
+  }
+  const doctor = db.data.doctors.find((item) => item.doctorId === doctorId);
+  if (!doctor || doctor.isActive === false || !(await bcrypt.compare(currentPassword, doctor.passwordHash || ''))) throw errors.unauthorized();
+  if (currentPassword === newPassword) throw errors.validation([{ field: 'newPassword', message: 'Choose a password different from the current password.' }]);
+  doctor.passwordHash = await bcrypt.hash(newPassword, 12);
+  doctor.authVersion = (doctor.authVersion || 0) + 1;
+  doctor.mustChangePassword = false;
+  doctor.updatedAt = nowIso();
+  await db.save();
+  return { token: issueToken(doctor), doctor: safeDoctor(doctor) };
 }
 
 async function registerDoctor(credentials = {}, registrationKey) {
@@ -74,11 +95,7 @@ async function login(credentials = {}) {
     throw errors.unauthorized();
   }
 
-  const token = jwt.sign({ role: 'doctor' }, config.jwtSecret, {
-    subject: doctor.doctorId,
-    expiresIn: config.jwtExpiresIn,
-    algorithm: 'HS256',
-  });
+  const token = issueToken(doctor);
   return {
     token,
     doctor: {
@@ -87,7 +104,8 @@ async function login(credentials = {}) {
       email: doctor.email,
       specialization: doctor.specialization,
     },
+    mustChangePassword: doctor.mustChangePassword === true,
   };
 }
 
-module.exports = { registerDoctor, login, safeDoctor };
+module.exports = { registerDoctor, login, changePassword, safeDoctor };

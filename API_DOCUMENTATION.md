@@ -121,6 +121,8 @@ All staff endpoints use `Authorization: Bearer <staff-token>`. Roles are loaded 
 - `POST /api/staff/auth/login` — `{ "email": "...", "password": "..." }`; returns a bearer token and safe staff profile.
 - `GET /api/staff/me`, `POST /api/staff/auth/logout` — any authenticated staff account.
 - `POST /api/staff` — ADMIN only; same body fields, role may be `ADMIN`, `RECEPTION`, or `MEDICAL_CENTER`.
+- `POST /api/admin/credentials/reset-all` — ADMIN only. Body must include `{ "confirmation": "RESET_ALL_STAFF_AND_DOCTORS" }`. Generates a unique temporary password for every staff account and every doctor account with a password, invalidates existing JWTs, and requires password change before protected APIs can be used. The response contains the temporary credentials once; call only over HTTPS and deliver each credential privately to its account owner. Accounts that could not be updated are listed in `failures`.
+- `POST /api/staff/auth/change-password` and `POST /api/doctors/auth/change-password` — the authenticated account owner changes their own password using `{ "currentPassword": "...", "newPassword": "at-least-12-chars" }`. On success, the response returns a new JWT; the previous token is invalidated.
 
 Passwords are bcrypt hashed. Set `JWT_SECRET`, `JWT_EXPIRES_IN`, `STAFF_PROVISIONING_KEY`, and `HOSPITAL_TIMEZONE`. Initial administrator provisioning requires an empty staff collection and the provisioning key. Store that key securely and remove/rotate it after bootstrap.
 

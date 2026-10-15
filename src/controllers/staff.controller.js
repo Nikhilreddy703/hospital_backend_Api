@@ -6,10 +6,15 @@ const { errors } = require('../utils/errors');
 const doctorLeave = require('../services/doctorLeave.service');
 
 exports.login = asyncHandler(async (req,res)=>res.json({success:true,message:'Login successful.',data:await auth.login(req.body)}));
+exports.changePassword = asyncHandler(async(req,res)=>res.json({success:true,message:'Password changed. Sign in again with the new password.',data:await auth.changePassword(req.staff.staffId,req.body?.currentPassword,req.body?.newPassword)}));
 exports.me = (req,res)=>res.json({success:true,data:{staff:req.staff}});
 exports.logout = (req,res)=>res.json({success:true,message:'Logged out. Remove the bearer token from the client.'});
 exports.bootstrap = asyncHandler(async(req,res)=>res.status(201).json({success:true,message:'Initial administrator created.',data:{staff:await auth.create(req.body,req.get('x-staff-provisioning-key'),null,true)}}));
 exports.create = asyncHandler(async(req,res)=>res.status(201).json({success:true,message:'Staff account created.',data:{staff:await auth.create(req.body,null,req.staff)}}));
+exports.resetAllCredentials = asyncHandler(async(req,res)=>{
+  const data=await require('../services/credentialReset.service').resetAll(req.body?.confirmation);
+  res.json({success:data.failedCount===0,message:data.failedCount?'Some accounts could not be reset.':'Temporary credentials were generated; each account must change its password at next sign-in.',data});
+});
 exports.list = asyncHandler(async(req,res)=>{const staff=await db.getCollection('staff').find({}).sort({createdAt:-1}).toArray();res.json({success:true,count:staff.length,data:staff.map(auth.safe)});});
 exports.dashboard = asyncHandler(async(req,res)=>res.json({success:true,data:await portal.dashboard()}));
 exports.analytics = asyncHandler(async(req,res)=>res.json({success:true,data:await portal.analytics(req.query)}));

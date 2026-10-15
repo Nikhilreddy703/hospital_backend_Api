@@ -47,6 +47,7 @@ const errors = {
   appointmentAlreadyCompleted: (id) =>
     new AppError(409, 'APPOINTMENT_ALREADY_COMPLETED', `Appointment ${id} is completed and can no longer be changed.`),
   unauthorized: () => new AppError(401, 'UNAUTHORIZED', 'Authentication is required or the credentials are invalid.'),
+  passwordChangeRequired: () => new AppError(403, 'PASSWORD_CHANGE_REQUIRED', 'Change the temporary password before using this account.'),
   forbidden: () => new AppError(403, 'FORBIDDEN', 'You are not authorized to perform this action.'),
   conflict: (code, message) => new AppError(409, code, message),
   registrationDisabled: () => new AppError(503, 'DOCTOR_REGISTRATION_DISABLED', 'Doctor registration is not configured.'),

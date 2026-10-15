@@ -12,6 +12,9 @@ function authenticateDoctor(req, res, next) {
     if (payload.role !== 'doctor' || typeof payload.sub !== 'string') throw new Error('Invalid token subject.');
     const doctor = db.data.doctors.find((item) => item.doctorId === payload.sub);
     if (!doctor || doctor.isActive === false) return next(errors.unauthorized());
+    if ((payload.ver || 0) !== (doctor.authVersion || 0)) return next(errors.unauthorized());
+    const path = req.originalUrl.split('?')[0];
+    if (doctor.mustChangePassword && !path.endsWith('/auth/change-password') && !path.endsWith('/me')) return next(errors.passwordChangeRequired());
     req.authDoctorId = doctor.doctorId;
     req.doctor = safeDoctor(doctor);
     return next();

@@ -2,6 +2,7 @@ process.env.NODE_ENV='test';
 process.env.PERSIST_DB='false';
 process.env.JWT_SECRET='staff-test-secret-that-is-long-enough';
 process.env.STAFF_PROVISIONING_KEY='bootstrap-test-key';
+process.env.DOCTOR_REGISTRATION_KEY='test-doctor-key';
 process.env.HOSPITAL_TIMEZONE='Asia/Kolkata';
 const request=require('supertest');
 const app=require('../src/app');
@@ -71,3 +72,39 @@ test('creates idempotent slots for a restored doctor, excludes leave dates, and 
   const booked=await request(app).post('/api/appointments').send({patientId:'PAT001',doctorId:'DOC012',slotId:slot.slotId});
   expect(booked.status).toBe(201);expect(booked.body.doctorId).toBe('DOC012');
 });
+
+test('admin can reset all staff and doctor passwords; accounts must rotate temporary passwords',async()=>{
+  const admin=await bootstrap();
+  const firstLogin=await request(app).post('/api/staff/auth/login').send({email:admin.email,password:'secure-staff-password-123'});
+  const adminHeaders={Authorization:`Bearer ${firstLogin.body.data.token}`};
+  const staffCreated=await request(app).post('/api/staff').set(adminHeaders).send({name:'Reception User',email:'reset-reception@example.test',password:'secure-reception-password-123',role:'RECEPTION'});
+  expect(staffCreated.status).toBe(201);
+  const doctorCreated=await request(app).post('/api/doctors/register').set('x-doctor-registration-key',process.env.DOCTOR_REGISTRATION_KEY).send({doctorId:'DOC001',email:'reset-doctor@example.test',password:'secure-doctor-password-123'});
+  expect(doctorCreated.status).toBe(201);
+  const doctorOldToken=(await request(app).post('/api/doctors/login').send({email:'reset-doctor@example.test',password:'secure-doctor-password-123'})).body.data.token;
+
+  const denied=await request(app).post('/api/admin/credentials/reset-all').set(adminHeaders).send({});
+  expect(denied.status).toBe(400);
+  const reset=await request(app).post('/api/admin/credentials/reset-all').set(adminHeaders).send({confirmation:'RESET_ALL_STAFF_AND_DOCTORS'});
+  expect(reset.status).toBe(200);expect(reset.body.data.resetCount).toBe(3);
+  expect((await request(app).get('/api/admin/dashboard').set(adminHeaders)).status).toBe(401);
+  const credentialFor=(type,id)=>reset.body.data.credentials.find(c=>c.accountType===type&&c.identifier===id);
+
+  const newAdmin=credentialFor('STAFF',admin.staffId);
+  const adminTemp=await request(app).post('/api/staff/auth/login').send({email:newAdmin.email,password:newAdmin.temporaryPassword});
+  expect(adminTemp.body.data.mustChangePassword).toBe(true);
+  expect((await request(app).get('/api/admin/dashboard').set('Authorization',`Bearer ${adminTemp.body.data.token}`)).body.errorCode).toBe('PASSWORD_CHANGE_REQUIRED');
+  const adminChanged=await request(app).post('/api/staff/auth/change-password').set('Authorization',`Bearer ${adminTemp.body.data.token}`).send({currentPassword:newAdmin.temporaryPassword,newPassword:'new-admin-password-123'});
+  expect(adminChanged.status).toBe(200);
+  expect((await request(app).get('/api/admin/dashboard').set('Authorization',`Bearer ${adminChanged.body.data.token}`)).status).toBe(200);
+
+  const doctorCred=credentialFor('DOCTOR','DOC001');
+  const doctorTemp=await request(app).post('/api/doctors/login').send({email:doctorCred.email,password:doctorCred.temporaryPassword});
+  expect(doctorTemp.body.data.mustChangePassword).toBe(true);
+  const blocked=await request(app).get('/api/doctors/me/appointments').set('Authorization',`Bearer ${doctorTemp.body.data.token}`);
+  expect(blocked.body.errorCode).toBe('PASSWORD_CHANGE_REQUIRED');
+  const doctorChanged=await request(app).post('/api/doctors/auth/change-password').set('Authorization',`Bearer ${doctorTemp.body.data.token}`).send({currentPassword:doctorCred.temporaryPassword,newPassword:'new-doctor-password-123'});
+  expect(doctorChanged.status).toBe(200);
+  expect((await request(app).get('/api/doctors/me/appointments').set('Authorization',`Bearer ${doctorChanged.body.data.token}`)).status).toBe(200);
+  expect((await request(app).get('/api/doctors/me/appointments').set('Authorization',`Bearer ${doctorOldToken}`)).status).toBe(401);
+},20000);

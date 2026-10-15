@@ -4,6 +4,7 @@ const authenticateDoctor = require('../middleware/authenticateDoctor');
 
 router.post('/register', c.register);
 router.post('/login', c.login);
+router.post('/auth/change-password', authenticateDoctor, c.changePassword);
 
 router.get('/me', authenticateDoctor, c.me);
 router.patch('/me/status', authenticateDoctor, c.updateMyStatus);

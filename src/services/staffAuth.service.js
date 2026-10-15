@@ -7,13 +7,39 @@ const { errors } = require('../utils/errors');
 const { nowIso } = require('../utils/helpers');
 const { ROLES, EMAIL_RE: EMAIL, toPublic: safe } = require('../models/staff.model');
 
+function issueToken(staff) {
+  return jwt.sign({ role: 'staff', ver: staff.authVersion || 0 }, config.jwtSecret, { subject: staff.staffId, expiresIn: config.jwtExpiresIn, algorithm: 'HS256' });
+}
+
+function validateNewPassword(password) {
+  if (typeof password !== 'string' || password.length < 12 || password.length > 128) throw errors.validation([{ field: 'newPassword', message: 'Password must be 12-128 characters.' }]);
+}
+
 async function login({ email, password } = {}) {
   if (typeof email !== 'string' || !EMAIL.test(email.trim()) || typeof password !== 'string' || !password) throw errors.validation([{ field: 'credentials', message: 'A valid email and password are required.' }]);
   if (!config.jwtSecret) throw errors.registrationDisabled();
   const staff = await db.getCollection('staff').findOne({ email: email.trim().toLowerCase() });
   if (!staff || !staff.isActive || !(await bcrypt.compare(password, staff.passwordHash || ''))) throw errors.unauthorized();
-  const token = jwt.sign({ role: 'staff' }, config.jwtSecret, { subject: staff.staffId, expiresIn: config.jwtExpiresIn, algorithm: 'HS256' });
-  return { token, staff: safe(staff) };
+  return { token: issueToken(staff), staff: safe(staff), mustChangePassword: staff.mustChangePassword === true };
+}
+
+async function changePassword(staffId, currentPassword, newPassword) {
+  validateNewPassword(newPassword);
+  if (typeof currentPassword !== 'string' || !currentPassword) throw errors.validation([{ field: 'currentPassword', message: 'currentPassword is required.' }]);
+  const collection = db.getCollection('staff');
+  const staff = await collection.findOne({ staffId, isActive: true });
+  if (!staff || !(await bcrypt.compare(currentPassword, staff.passwordHash || ''))) throw errors.unauthorized();
+  if (currentPassword === newPassword) throw errors.validation([{ field: 'newPassword', message: 'Choose a password different from the current password.' }]);
+  const version = (staff.authVersion || 0) + 1;
+  const updatedAt = nowIso();
+  const passwordHash = await bcrypt.hash(newPassword, 12);
+  const filter = staff.authVersion === undefined
+    ? { $or: [{ staffId, authVersion: { $exists: false } }, { staffId, authVersion: 0 }] }
+    : { staffId, authVersion: staff.authVersion };
+  const result = await collection.updateOne(filter, { $set: { passwordHash, authVersion: version, mustChangePassword: false, updatedAt } });
+  if (!result.matchedCount) throw errors.conflict('CREDENTIALS_CHANGED', 'Credentials changed concurrently; sign in again.');
+  const updated = { ...staff, passwordHash, authVersion: version, mustChangePassword: false, updatedAt };
+  return { token: issueToken(updated), staff: safe(updated) };
 }
 
 async function create(input = {}, provisionKey, actor, bootstrap = false) {
@@ -37,4 +63,4 @@ async function create(input = {}, provisionKey, actor, bootstrap = false) {
   return safe(staff);
 }
 
-module.exports = { login, create, safe, ROLES };
+module.exports = { login, create, changePassword, safe, ROLES };

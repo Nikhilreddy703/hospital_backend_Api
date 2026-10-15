@@ -3,7 +3,7 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 function toPublic(staff) {
   if (!staff) return null;
-  const { passwordHash, ...publicStaff } = staff;
+  const { passwordHash, authVersion, ...publicStaff } = staff;
   return publicStaff;
 }
 

@@ -35,6 +35,11 @@ exports.login = asyncHandler(async (req, res) => {
   res.json({ success: true, message: 'Login successful.', data });
 });
 
+exports.changePassword = asyncHandler(async (req,res)=>{
+  const data=await doctorAuthService.changePassword(req.authDoctorId,req.body?.currentPassword,req.body?.newPassword);
+  res.json({success:true,message:'Password changed. Sign in again with the new password.',data});
+});
+
 exports.me = (req, res) => res.json({ success: true, data: { doctor: profile(req.doctor) } });
 
 exports.updateMyStatus = asyncHandler(async (req, res) => {

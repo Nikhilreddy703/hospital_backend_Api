@@ -12,8 +12,11 @@ async function authenticateStaff(req, res, next) {
     if (payload.role !== 'staff' || typeof payload.sub !== 'string') throw errors.unauthorized();
     const staff = await db.getCollection('staff').findOne({ staffId: payload.sub, isActive: true });
     if (!staff) throw errors.unauthorized();
+    if ((payload.ver || 0) !== (staff.authVersion || 0)) throw errors.unauthorized();
     req.staff = safe(staff);
     req.staffRole = staff.role;
+    const path = req.originalUrl.split('?')[0];
+    if (staff.mustChangePassword && !path.endsWith('/auth/change-password') && !path.endsWith('/me') && !path.endsWith('/auth/logout')) throw errors.passwordChangeRequired();
     next();
   } catch (err) { next(err.status ? err : errors.unauthorized()); }
 }
