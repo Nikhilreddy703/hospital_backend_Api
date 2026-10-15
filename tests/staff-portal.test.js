@@ -63,6 +63,7 @@ test('creates idempotent slots for a restored doctor, excludes leave dates, and 
   await require('../src/services/slot.service').ensureDoctorSlots('DOC012');
   const first=await request(app).get('/api/doctors/DOC012/slots');
   expect(first.status).toBe(200);expect(first.body.totalAvailable).toBeGreaterThan(0);
+  expect(db.data.slots.filter(s=>s.doctorId==='DOC012').every(s=>!Object.prototype.hasOwnProperty.call(s,'_id'))).toBe(true);
   const countBefore=db.data.slots.filter(s=>s.doctorId==='DOC012').length;
   await request(app).get('/api/doctors/DOC012/slots');
   expect(db.data.slots.filter(s=>s.doctorId==='DOC012')).toHaveLength(countBefore);

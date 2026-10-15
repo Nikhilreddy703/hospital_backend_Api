@@ -27,8 +27,11 @@ function save(clearCollections = false) {
   if (!config.persist || !collections) return Promise.resolve();
   // Persist only documents changed in this process. Rewriting every cached
   // document can overwrite concurrent changes made by another Render instance.
-  const snapshot = JSON.parse(JSON.stringify(state));
   const idFields = { doctors: 'doctorId', patients: 'patientId', appointments: 'appointmentId', slots: 'slotId' };
+  const snapshot = JSON.parse(JSON.stringify(state));
+  // MongoDB's _id is immutable; cached documents hydrated after startup may
+  // contain it, so never include it in a $set payload.
+  for (const key of Object.keys(idFields)) snapshot[key] = snapshot[key].map(withoutMongoId);
   const changed = {};
   for (const [key, idField] of Object.entries(idFields)) {
     const previous = new Map((persistedState?.[key] || []).map((doc) => [doc[idField], JSON.stringify(doc)]));

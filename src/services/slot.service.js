@@ -46,7 +46,10 @@ async function ensureDoctorSlots(doctorId) {
     ? await collection.find({ doctorId: doctor.doctorId, date: { $gte: todayInIndia() } }).toArray()
     : await collection.find({ doctorId: doctor.doctorId }).toArray();
   const byId = new Map(db.data.slots.map((slot) => [slot.slotId, slot]));
-  for (const slot of current) byId.set(slot.slotId, slot);
+  for (const document of current) {
+    const { _id, ...slot } = document;
+    byId.set(slot.slotId, slot);
+  }
   db.data.slots = [...byId.values()];
   return created.length;
 }
