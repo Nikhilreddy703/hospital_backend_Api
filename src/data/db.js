@@ -215,12 +215,19 @@ async function completePastAppointments() {
       ['CONFIRMED', 'PATIENT_CHECKED_IN', 'IN_CONSULTATION'].includes(appointment.status) && isPastAppointmentTime(appointment.date, appointment.time24)
     );
     for (const appointment of pastAppointments) {
-      appointment.status = 'COMPLETED';
-      appointment.consultation = {
-        ...(appointment.consultation || {}),
-        status: 'COMPLETED',
-        completedAt,
-      };
+      if (appointment.status === 'CONFIRMED') {
+        appointment.status = 'NO_SHOW';
+        appointment.noShowAt = completedAt;
+        appointment.noShowBy = null;
+        appointment.noShowSource = 'SYSTEM';
+      } else {
+        appointment.status = 'COMPLETED';
+        appointment.consultation = {
+          ...(appointment.consultation || {}),
+          status: 'COMPLETED',
+          completedAt,
+        };
+      }
       appointment.updatedAt = completedAt;
     }
     if (pastAppointments.length) save();
@@ -235,6 +242,10 @@ async function completePastAppointments() {
     let changed = 0;
 
     for (const appointment of pastAppointments) {
+      const isNoShow = appointment.status === 'CONFIRMED';
+      const update = isNoShow
+        ? { $set: { status: 'NO_SHOW', noShowAt: completedAt, noShowBy: null, noShowSource: 'SYSTEM', updatedAt: completedAt } }
+        : { $set: { status: 'COMPLETED', 'consultation.status': 'COMPLETED', 'consultation.completedAt': completedAt, updatedAt: completedAt } };
       const result = await collections.appointments.updateOne(
         {
           appointmentId: appointment.appointmentId,
@@ -242,20 +253,15 @@ async function completePastAppointments() {
           date: appointment.date,
           time24: appointment.time24,
         },
-        { $set: {
-          status: 'COMPLETED',
-          'consultation.status': 'COMPLETED',
-          'consultation.completedAt': completedAt,
-          updatedAt: completedAt,
-        } }
+        update
       );
       if (result.matchedCount && ['CONFIRMED', 'PATIENT_CHECKED_IN', 'IN_CONSULTATION'].includes(appointment.status)) {
-        appointment.status = 'COMPLETED';
-        appointment.consultation = {
-          ...(appointment.consultation || {}),
-          status: 'COMPLETED',
-          completedAt,
-        };
+        if (isNoShow) {
+          Object.assign(appointment, { status: 'NO_SHOW', noShowAt: completedAt, noShowBy: null, noShowSource: 'SYSTEM' });
+        } else {
+          appointment.status = 'COMPLETED';
+          appointment.consultation = { ...(appointment.consultation || {}), status: 'COMPLETED', completedAt };
+        }
         appointment.updatedAt = completedAt;
         changed += 1;
       }
@@ -263,7 +269,7 @@ async function completePastAppointments() {
     return changed;
   });
   pendingWrite = operation.catch((error) => {
-    console.error('Could not complete past appointments:', error.message);
+    console.error('Could not process past appointments:', error.message);
   });
   return operation;
 }

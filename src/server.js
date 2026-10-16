@@ -16,20 +16,20 @@ async function start() {
       console.error('Past-slot cleanup will retry later:', error.message);
     }
   };
-  const completePastAppointments = async () => {
+  const processPastAppointments = async () => {
     try {
-      const completed = await db.completePastAppointments();
-      if (completed) console.log(`Marked ${completed} past appointment(s) as completed.`);
+      const processed = await db.completePastAppointments();
+      if (processed) console.log(`Processed ${processed} past appointment(s).`);
     } catch (error) {
-      console.error('Past-appointment completion will retry later:', error.message);
+      console.error('Past-appointment processing will retry later:', error.message);
     }
   };
   await prunePastSlots();
   const cleanupTimer = setInterval(prunePastSlots, 60 * 60 * 1000);
   cleanupTimer.unref();
-  await completePastAppointments();
-  const completionTimer = setInterval(completePastAppointments, 60 * 1000);
-  completionTimer.unref();
+  await processPastAppointments();
+  const pastAppointmentTimer = setInterval(processPastAppointments, 60 * 1000);
+  pastAppointmentTimer.unref();
   const expireLeaves = async () => {
     try {
       const expired = await doctorLeaveService.expirePastLeaves();

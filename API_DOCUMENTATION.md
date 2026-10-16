@@ -87,7 +87,7 @@ The tracking prescription endpoint returns `{ "success": true, "data": null }` b
 
 - Doctor status: `AVAILABLE`, `CHECKED_IN`, `ON_LEAVE`, `OFFLINE`.
 - Appointment status: existing `CONFIRMED`, `CANCELLED`, and `COMPLETED`, with `PATIENT_CHECKED_IN` and `IN_CONSULTATION` added for the portal workflow.
-- Confirmed, patient-checked-in, or in-consultation appointments automatically become `COMPLETED` after their scheduled date/time; the server records the consultation completion timestamp and checks at startup and every minute.
+- Confirmed appointments with no check-in automatically become `NO_SHOW` after their scheduled date/time. Patient-checked-in or in-consultation appointments become `COMPLETED`; the server checks at startup and every minute. System no-shows include `noShowAt`, a null `noShowBy`, and `noShowSource: SYSTEM`.
 - Past unbooked slots are removed at startup and hourly. Booked slots remain for appointment history.
 - Rejected input returns `400`; missing/invalid authentication returns `401`; ownership failure returns `403`; missing records return `404`; duplicate or invalid workflow transitions return `409`.
 
@@ -151,7 +151,7 @@ MEDICAL_CENTER and ADMIN can call `GET /api/medical-center/completed-appointment
 
 ## Appointment states
 
-`CONFIRMED -> PATIENT_CHECKED_IN -> IN_CONSULTATION -> COMPLETED`. Confirmed appointments may become `CANCELLED` through the existing cancellation API or `NO_SHOW` by explicit reception confirmation after the 30-minute threshold. No-show, cancelled, completed, checked-in, and in-consultation appointments are not eligible for no-show. Doctor reassignment is not performed by check-in or leave handling.
+`CONFIRMED -> PATIENT_CHECKED_IN -> IN_CONSULTATION -> COMPLETED`. Confirmed appointments may become `CANCELLED` through the existing cancellation API, or become `NO_SHOW` automatically after their scheduled time if still unmodified. Reception can also explicitly mark a confirmed appointment `NO_SHOW` after the 30-minute threshold. No-show, cancelled, completed, checked-in, and in-consultation appointments are not eligible for reception no-show marking. Doctor reassignment is not performed by check-in or leave handling.
 
 Available doctors receive missing slots during server startup and before booking, using the existing weekday schedule (10:00, 10:30, 11:00, 11:30, 14:00, 14:30, 15:00, 15:30) across the configured `SEED_DAYS` booking window. Generation is idempotent and does not overwrite booked slots. Inactive doctors, doctors marked offline/on leave, Sundays, and dates covered by active leave records are skipped. After manually changing doctor availability in MongoDB, restart the backend so it reloads the doctor record and runs slot generation.
 

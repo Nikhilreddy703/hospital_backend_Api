@@ -31,6 +31,7 @@ function toView(a) {
     consultation: a.consultation || { status: 'NOT_STARTED', startedAt: null, completedAt: null },
     noShowAt: a.noShowAt || null,
     noShowBy: a.noShowBy || null,
+    noShowSource: a.noShowSource || null,
     prescriptionId: a.prescriptionId || null,
     createdAt: a.createdAt,
     updatedAt: a.updatedAt,

@@ -262,4 +262,19 @@ describe('Patient check-in and consultation workflow', () => {
     expect(appointment.consultation.status).toBe('COMPLETED');
     expect(appointment.consultation.completedAt).toBeTruthy();
   });
+
+  test('marks unmodified confirmed appointments past their scheduled time as system no-shows', async () => {
+    const appointment = {
+      appointmentId: 'APTTESTNOSHOW', patientId: 'PAT001', doctorId: 'DOC001', slotId: 'TESTNOSHOW',
+      date: '2000-01-01', time24: '10:00', status: 'CONFIRMED',
+    };
+    db.data.appointments = [appointment];
+    const count = await db.completePastAppointments();
+    expect(count).toBe(1);
+    expect(appointment.status).toBe('NO_SHOW');
+    expect(appointment.noShowAt).toBeTruthy();
+    expect(appointment.noShowBy).toBeNull();
+    expect(appointment.noShowSource).toBe('SYSTEM');
+    expect(appointment.consultation).toBeUndefined();
+  });
 });

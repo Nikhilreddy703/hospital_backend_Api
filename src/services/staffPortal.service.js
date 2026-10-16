@@ -53,9 +53,9 @@ async function noShow(id, staff, confirmed) {
   if (a.status !== STATUS.CONFIRMED || a.patientCheckIn?.status === 'CHECKED_IN') throw errors.invalidAppointmentState('This appointment is not eligible to be marked no-show.');
   if (Date.now() < timeFor(a.date, a.time24) + 30*60000) throw errors.conflict('NO_SHOW_TOO_EARLY', 'No-show is allowed only 30 minutes after the scheduled appointment time.');
   const at = nowIso();
-  const update = await db.getCollection('appointments').updateOne({ appointmentId: a.appointmentId, status: STATUS.CONFIRMED, 'patientCheckIn.status': { $ne: 'CHECKED_IN' }, noShowAt: { $exists: false } }, { $set: { status: 'NO_SHOW', noShowAt: at, noShowBy: staff.staffId, updatedAt: at } });
+  const update = await db.getCollection('appointments').updateOne({ appointmentId: a.appointmentId, status: STATUS.CONFIRMED, 'patientCheckIn.status': { $ne: 'CHECKED_IN' }, noShowAt: { $exists: false } }, { $set: { status: 'NO_SHOW', noShowAt: at, noShowBy: staff.staffId, noShowSource: 'RECEPTION', updatedAt: at } });
   if (!update.matchedCount) throw errors.conflict('APPOINTMENT_STATE_CONFLICT', 'Appointment state changed or it was already marked no-show.');
-  Object.assign(a, { status: 'NO_SHOW', noShowAt: at, noShowBy: staff.staffId, updatedAt: at });
+  Object.assign(a, { status: 'NO_SHOW', noShowAt: at, noShowBy: staff.staffId, noShowSource: 'RECEPTION', updatedAt: at });
   return appointmentService.toView(a);
 }
 
