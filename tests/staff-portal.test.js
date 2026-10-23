@@ -7,6 +7,7 @@ process.env.HOSPITAL_TIMEZONE='Asia/Kolkata';
 const request=require('supertest');
 const app=require('../src/app');
 const db=require('../src/data/db');
+const { book: completeBooking }=require('./helpers/booking');
 const today=require('../src/utils/helpers').todayInIndia();
 
 beforeEach(()=>db.reset());
@@ -34,8 +35,8 @@ test('bootstraps only the first admin, hashes password, authenticates and gates 
 test('reception check-in stores staff identity and leaves original doctor assignment intact',async()=>{
   const staffResponse=await createStaff('RECEPTION','reception@example.test');
   const login=await request(app).post('/api/staff/auth/login').send({email:'reception@example.test',password:'secure-staff-password-456'});
-  const slot={slotId:'STAFFTESTSLOT',doctorId:'DOC001',date:today,time24:'10:00',time:'10:00 AM',status:'AVAILABLE'};db.data.slots.push(slot);
-  const booking=await request(app).post('/api/appointments').send({patientId:'PAT001',doctorId:'DOC001',slotId:slot.slotId});
+  const slot={slotId:'STAFFTESTSLOT',doctorId:'DOC001',date:today,time24:'23:59',time:'11:59 PM',status:'AVAILABLE'};db.data.slots.push(slot);
+  const booking=await completeBooking(request,app,db,{patientId:'PAT001',doctorId:'DOC001',slotId:slot.slotId});
   expect(booking.status).toBe(201);
   const response=await request(app).post(`/api/appointments/${booking.body.appointmentId}/reception-check-in`).set('Authorization',`Bearer ${login.body.data.token}`);
   expect(response.status).toBe(200);
@@ -69,8 +70,8 @@ test('creates idempotent slots for a restored doctor, excludes leave dates, and 
   expect(db.data.slots.filter(s=>s.doctorId==='DOC012')).toHaveLength(countBefore);
   const leaveSlots=await request(app).get('/api/doctors/DOC012/slots').query({date:leaveDate});
   expect(leaveSlots.body.totalAvailable).toBe(0);
-  const slot=first.body.availableSlots[0];
-  const booked=await request(app).post('/api/appointments').send({patientId:'PAT001',doctorId:'DOC012',slotId:slot.slotId});
+  const slot=first.body.availableSlots.find(item=>item.date>today);
+  const booked=await completeBooking(request,app,db,{patientId:'PAT001',doctorId:'DOC012',slotId:slot.slotId});
   expect(booked.status).toBe(201);expect(booked.body.doctorId).toBe('DOC012');
 });
 

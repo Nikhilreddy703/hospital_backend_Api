@@ -17,14 +17,14 @@ const sunday = sundayValue.toISOString().slice(0, 10);
 const request = require('supertest');
 const app = require('../src/app');
 const db = require('../src/data/db');
+const { book: completeBooking } = require('./helpers/booking');
 
 beforeEach(() => db.reset());
 
 const getSlots = async (doctorId, date) =>
   (await request(app).get(`/api/doctors/${doctorId}/slots`).query({ date })).body.availableSlots;
 
-const book = (patientId, doctorId, slotId) =>
-  request(app).post('/api/appointments').send({ patientId, doctorId, slotId });
+const book = (patientId, doctorId, slotId) => completeBooking(request, app, db, { patientId, doctorId, slotId });
 
 describe('Doctors', () => {
   test('lists at least 10 doctors', async () => {
@@ -155,7 +155,7 @@ describe('Appointments', () => {
   test('validates doctor, patient and slot', async () => {
     const [slot] = await getSlots('DOC001', testDate);
     expect((await book('PAT001', 'DOC999', slot.slotId)).body.errorCode).toBe('DOCTOR_NOT_FOUND');
-    expect((await book('PAT999', 'DOC001', slot.slotId)).body.errorCode).toBe('PATIENT_NOT_FOUND');
+    expect((await book('PAT999', 'DOC001', slot.slotId)).status).toBe(201); // guest booking needs no existing patient account
     expect((await book('PAT001', 'DOC001', 'S9999')).body.errorCode).toBe('SLOT_NOT_FOUND');
     expect((await book('PAT001', 'DOC012', slot.slotId)).status).toBe(409); // doctor is on leave
     const missing = await request(app).post('/api/appointments').send({});

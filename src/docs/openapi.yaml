@@ -303,6 +303,7 @@ paths:
         '404':
           description: Doctor or slot not found
         '503': { description: Email delivery is unavailable or SMTP is not configured }
+        '409': { $ref: '#/components/responses/Conflict' }
 
   /api/appointments/confirm:
     post:
@@ -319,14 +320,6 @@ paths:
         '201': { description: Appointment created and confirmation email attempted }
         '400': { $ref: '#/components/responses/BadRequest' }
         '429': { description: OTP attempts exceeded }
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Error' }
-              examples:
-                doctor: { value: { success: false, errorCode: DOCTOR_NOT_FOUND, message: Doctor with ID DOC999 was not found. } }
-                patient: { value: { success: false, errorCode: PATIENT_NOT_FOUND, message: Patient with ID PAT999 was not found. } }
-                slot: { value: { success: false, errorCode: SLOT_NOT_FOUND, message: Slot S9999 was not found for doctor DOC001. } }
-        '409': { $ref: '#/components/responses/Conflict' }
 
   /api/appointments/{id}:
     get:

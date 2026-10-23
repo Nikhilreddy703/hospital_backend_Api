@@ -19,6 +19,7 @@ const request = require('supertest');
 const jwt = require('jsonwebtoken');
 const app = require('../src/app');
 const db = require('../src/data/db');
+const { book: completeBooking } = require('./helpers/booking');
 
 const credentials = (doctorId, email) => ({
   doctorId,
@@ -43,16 +44,15 @@ function addTodaySlot(doctorId = 'DOC001', suffix = '1') {
     slotId: `TST${doctorId.slice(-3)}${suffix}`,
     doctorId,
     date: today,
-    time: '10:00 AM',
-    time24: '10:00',
+    time: '11:59 PM',
+    time24: '23:59',
     status: 'AVAILABLE',
   };
   db.data.slots.push(slot);
   return slot;
 }
 
-const book = (doctorId, slotId, patientId = 'PAT001') => request(app)
-  .post('/api/appointments').send({ doctorId, slotId, patientId, reason: 'Portal workflow test' });
+const book = (doctorId, slotId, patientId = 'PAT001') => completeBooking(request, app, db, { doctorId, slotId, patientId, reason: 'Portal workflow test' });
 
 beforeEach(() => db.reset());
 

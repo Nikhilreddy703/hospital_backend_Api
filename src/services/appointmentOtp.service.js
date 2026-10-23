@@ -36,9 +36,12 @@ function otpHash(email, code) {
 
 async function resolveSlot(details) {
   if (isPastDate(details.date)) throw errors.pastAppointmentDate();
-  const candidates = doctorService.findDoctors({ department: details.department, available: 'true' });
+  const candidates = doctorService.findDoctors({ department: details.department });
   const doctor = candidates.find((item) => normalize(item.name) === normalize(details.doctorName));
   if (!doctor) throw errors.doctorNotFound(details.doctorName);
+  if (doctor.isActive === false || doctor.availabilityStatus !== 'AVAILABLE' || ['OFFLINE', 'ON_LEAVE'].includes(doctor.status)) {
+    throw errors.doctorUnavailable(doctor.name);
+  }
   await slotService.ensureDoctorSlots(doctor.doctorId);
   if (await doctorLeaveService.isOnLeave(doctor.doctorId, details.date)) throw errors.doctorOnLeave();
   const slot = slotService.findSlotByDateTime(details.date, details.time, doctor.doctorId);
