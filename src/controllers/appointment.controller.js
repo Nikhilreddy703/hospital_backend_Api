@@ -1,12 +1,23 @@
 const appointmentService = require('../services/appointment.service');
-const { validateBooking, validateReschedule } = require('../models/appointment.model');
+const { validateReschedule } = require('../models/appointment.model');
 const prescriptionService = require('../services/prescription.service');
 const { validateAppointmentId, validatePrescription } = require('../models/doctorPortal.model');
 const { asyncHandler } = require('../middleware/errorHandler');
+const appointmentOtpService = require('../services/appointmentOtp.service');
 
 exports.book = asyncHandler(async (req, res) => {
-  const appointment = await appointmentService.book(validateBooking(req.body));
-  res.status(201).json({ success: true, message: 'Appointment booked successfully.', ...appointment });
+  const data = await appointmentOtpService.requestOtp(req.body);
+  res.status(202).json({ success: true, message: 'Verification code sent to the supplied email.', data });
+});
+
+exports.confirmBooking = asyncHandler(async (req, res) => {
+  const result = await appointmentOtpService.confirmOtp(req.body);
+  res.status(201).json({
+    success: true,
+    message: result.confirmationEmailSent ? 'Appointment booked and confirmation email sent.' : 'Appointment booked, but the confirmation email could not be sent.',
+    ...result.appointment,
+    confirmationEmailSent: result.confirmationEmailSent,
+  });
 });
 
 exports.get = asyncHandler(async (req, res) => {
@@ -80,7 +91,10 @@ exports.startConsultation = asyncHandler(async (req, res) => {
 
 exports.completeConsultation = asyncHandler(async (req, res) => {
   const appointment = await appointmentService.completeConsultation(validateAppointmentId(req.params.id), req.authDoctorId);
-  res.json({ success: true, message: 'Consultation completed.', data: appointment });
+  let prescriptionEmailSent = false;
+  try { prescriptionEmailSent = await prescriptionService.emailForCompletedAppointment(appointment.appointmentId); }
+  catch (error) { console.error('Consultation completed but prescription email failed:', error.message); }
+  res.json({ success: true, message: 'Consultation completed.', data: { ...appointment, prescriptionEmailSent } });
 });
 
 exports.addPrescription = asyncHandler(async (req, res) => {
@@ -92,7 +106,12 @@ exports.addPrescription = asyncHandler(async (req, res) => {
   const prescription = await prescriptionService.create(
     validateAppointmentId(req.params.id), req.authDoctorId, validatePrescription(req.body)
   );
-  res.status(201).json({ success: true, message: 'Prescription created.', data: prescription });
+  let prescriptionEmailSent = false;
+  if (appointment.status === 'COMPLETED') {
+    try { prescriptionEmailSent = await prescriptionService.emailForCompletedAppointment(appointment.appointmentId); }
+    catch (error) { console.error('Prescription created but email failed:', error.message); }
+  }
+  res.status(201).json({ success: true, message: 'Prescription created.', data: { ...prescription, prescriptionEmailSent } });
 });
 
 exports.getPrescription = asyncHandler(async (req, res) => {

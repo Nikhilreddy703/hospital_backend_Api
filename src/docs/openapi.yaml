@@ -284,40 +284,41 @@ paths:
   /api/appointments:
     post:
       tags: [Appointments]
-      summary: Book an appointment (slot AVAILABLE -> BOOKED)
-      description: Provide either slotId or both date and time. The API checks that the selected slot belongs to the doctor, is still available, and is not in the past.
-      operationId: bookAppointment
+      summary: Request an appointment email OTP
+      description: Starts an account-free booking flow. The doctor is selected by exact doctorName within department; no appointment is created until the OTP is confirmed.
+      operationId: requestAppointmentOtp
       requestBody:
         required: true
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/BookingRequest' }
-            example: { patientId: PAT001, doctorId: DOC001, date: '2026-10-10', time: '10:30 AM', reason: Chest discomfort }
+            schema: { $ref: '#/components/schemas/BookingOtpRequest' }
+            example: { name: Neha Demo, email: neha@example.com, department: 'Heart & Vascular', doctorName: 'Dr. Rahul Sharma', date: '2026-10-20', time: '10:30 AM', reason: Chest discomfort }
       responses:
-        '201':
-          description: Appointment confirmed
+        '202':
+          description: Verification code sent by email; expires after ten minutes
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/Appointment' }
-              example:
-                success: true
-                message: Appointment booked successfully.
-                appointmentId: APT10007
-                status: CONFIRMED
-                patientId: PAT001
-                patientName: Aarav Demo
-                doctorId: DOC001
-                doctor: Dr. Rahul Sharma
-                specialization: Cardiology
-                hospital: CityCare Demo Hospital
-                location: 'Block A, Floor 1, Room 101'
-                slotId: S0026
-                date: '2026-10-10'
-                time: 10:30 AM
-                reason: Chest discomfort
+              schema: { $ref: '#/components/schemas/OtpRequestResponse' }
         '400': { $ref: '#/components/responses/BadRequest' }
         '404':
-          description: Doctor, patient or slot not found
+          description: Doctor or slot not found
+        '503': { description: Email delivery is unavailable or SMTP is not configured }
+
+  /api/appointments/confirm:
+    post:
+      tags: [Appointments]
+      summary: Confirm booking with email OTP
+      operationId: confirmAppointmentOtp
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OtpConfirmationRequest' }
+            example: { email: neha@example.com, otp: '123456' }
+      responses:
+        '201': { description: Appointment created and confirmation email attempted }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '429': { description: OTP attempts exceeded }
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
@@ -467,6 +468,30 @@ paths:
       operationId: getHospitalDoctors
       responses:
         '200': { description: Same response as GET /api/doctors }
+
+  /api/admin/doctors:
+    post:
+      tags: [Admin]
+      summary: Create a doctor profile
+      description: ADMIN bearer token required. The backend assigns doctorId and creates an available profile; an optional email may later be used to attach a doctor login.
+      operationId: createDoctorProfile
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DoctorProfileCreate' }
+            example: { name: 'Dr. Anika Rao', specialization: Cardiology, department: 'Heart & Vascular', experienceYears: 8, consultationFee: 750, currency: INR, location: 'Block A, Floor 1, Room 103', phone: '+91 9000000013', email: anika.rao@example.com }
+      responses:
+        '201':
+          description: Profile created; doctorId is assigned by the backend
+          content:
+            application/json:
+              schema: { type: object, properties: { success: { type: boolean }, message: { type: string }, data: { type: object, properties: { doctor: { $ref: '#/components/schemas/DoctorProfile' } } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { description: Authentication required }
+        '403': { description: ADMIN role required }
+        '409': { $ref: '#/components/responses/Conflict' }
 
   /api/doctors/register:
     post:
@@ -732,6 +757,32 @@ components:
             cancelled: { value: { success: false, errorCode: APPOINTMENT_ALREADY_CANCELLED, message: Appointment APT10005 has already been cancelled. } }
 
   schemas:
+    DoctorProfileCreate:
+      type: object
+      required: [name, specialization, department]
+      properties:
+        name: { type: string, minLength: 2, maxLength: 100, example: 'Dr. Anika Rao' }
+        specialization: { type: string, maxLength: 100, example: Cardiology }
+        department: { type: string, maxLength: 100, example: 'Heart & Vascular' }
+        doctorType: { type: string, maxLength: 100 }
+        experienceYears: { type: integer, minimum: 0, maximum: 70 }
+        consultationFee: { type: number, minimum: 0 }
+        currency: { type: string, pattern: '^[A-Za-z]{3}$', example: INR }
+        location: { type: string, maxLength: 200 }
+        phone: { type: string, example: '+91 9000000013' }
+        email: { type: string, format: email }
+        availabilityStatus: { type: string, enum: [AVAILABLE, OFFLINE], default: AVAILABLE }
+        isActive: { type: boolean, default: true }
+    DoctorProfile:
+      allOf:
+        - { $ref: '#/components/schemas/DoctorProfileCreate' }
+        - type: object
+          properties:
+            doctorId: { type: string, example: DOC013 }
+            status: { type: string, enum: [AVAILABLE, OFFLINE] }
+            hospital: { type: string, example: CityCare Demo Hospital }
+            createdAt: { type: string, format: date-time }
+            updatedAt: { type: string, format: date-time }
     DoctorRegistrationRequest:
       type: object
       required: [doctorId, email, password]
@@ -844,17 +895,35 @@ components:
         gender: { type: string, enum: [MALE, FEMALE, OTHER] }
         phone: { type: string, description: 10 digits, example: '9000000099' }
         email: { type: string, nullable: true }
-    BookingRequest:
+    BookingOtpRequest:
       type: object
-      required: [patientId, doctorId]
-      description: Provide either slotId or both date and time.
+      required: [name, email, department, doctorName, date, time, reason]
+      description: No patient account is required. An OTP is sent to email; the appointment is created only after confirmation.
       properties:
-        patientId: { type: string, example: PAT001 }
-        doctorId: { type: string, example: DOC001 }
-        slotId: { type: string, description: Use this or both date and time., example: S0026 }
-        date: { type: string, format: date, description: Required with time when slotId is omitted., example: '2026-10-10' }
-        time: { type: string, description: Required with date when slotId is omitted. Accepts HH:mm or h:mm AM/PM., example: '10:30 AM' }
+        name: { type: string, minLength: 2, maxLength: 100 }
+        email: { type: string, format: email }
+        department: { type: string, example: 'Heart & Vascular' }
+        doctorName: { type: string, example: 'Dr. Rahul Sharma' }
+        date: { type: string, format: date, example: '2026-10-20' }
+        time: { type: string, description: Accepts HH:mm or h:mm AM/PM., example: '10:30 AM' }
         reason: { type: string, maxLength: 200, example: Chest discomfort }
+    OtpConfirmationRequest:
+      type: object
+      required: [email, otp]
+      properties:
+        email: { type: string, format: email }
+        otp: { type: string, pattern: '^\\d{6}$' }
+    OtpRequestResponse:
+      type: object
+      properties:
+        success: { type: boolean, example: true }
+        message: { type: string, example: Verification code sent to the supplied email. }
+        data:
+          type: object
+          properties:
+            email: { type: string, format: email }
+            expiresInSeconds: { type: integer, example: 600 }
+            resendAfterSeconds: { type: integer, example: 60 }
     RescheduleRequest:
       type: object
       required: [slotId]
@@ -872,6 +941,7 @@ components:
         doctorId: { type: string, example: DOC001 }
         doctor: { type: string, example: Dr. Rahul Sharma }
         specialization: { type: string, example: Cardiology }
+        department: { type: string, example: 'Heart & Vascular' }
         hospital: { type: string, example: CityCare Demo Hospital }
         location: { type: string }
         slotId: { type: string, example: S0018 }

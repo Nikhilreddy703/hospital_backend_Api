@@ -62,8 +62,8 @@ async function registerDoctor(credentials = {}, registrationKey) {
   if (doctor.isActive === false) throw errors.forbidden();
 
   const normalizedEmail = email.trim().toLowerCase();
-  if (doctor.passwordHash || doctor.email || db.data.doctors.some((item) =>
-    typeof item.email === 'string' && item.email.toLowerCase() === normalizedEmail
+  if (doctor.passwordHash || (doctor.email && doctor.email.toLowerCase() !== normalizedEmail) || db.data.doctors.some((item) =>
+    item.doctorId !== doctor.doctorId && typeof item.email === 'string' && item.email.toLowerCase() === normalizedEmail
   )) {
     throw errors.conflict('DOCTOR_ACCOUNT_EXISTS', 'This doctor account is already registered or the email is already in use.');
   }

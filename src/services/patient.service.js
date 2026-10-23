@@ -16,19 +16,33 @@ function listPatients({ phone } = {}) {
   return result;
 }
 
-function createPatient(body) {
+async function createPatient(body) {
   const data = validatePatient(body);
-  const meta = db.data.meta;
   const now = nowIso();
   const patient = {
-    patientId: `PAT${pad(meta.nextPatientNumber++, 3)}`,
+    patientId: `PAT${pad(await db.allocatePatientNumber(), 3)}`,
     email: null,
     ...data,
     createdAt: now,
     updatedAt: now,
   };
   db.data.patients.push(patient);
-  db.save();
+  await db.save();
+  return patient;
+}
+
+async function findOrCreateEmailPatient({ name, email }) {
+  const normalizedEmail = email.trim().toLowerCase();
+  const existing = db.data.patients.find((patient) => patient.email?.toLowerCase() === normalizedEmail);
+  if (existing) return existing;
+  const now = nowIso();
+  const patient = {
+    patientId: `PAT${pad(await db.allocatePatientNumber(), 3)}`,
+    name: name.trim(), age: null, gender: null, phone: null, email: normalizedEmail,
+    createdAt: now, updatedAt: now,
+  };
+  db.data.patients.push(patient);
+  await db.save();
   return patient;
 }
 
@@ -40,4 +54,4 @@ function updatePatient(id, body) {
   return patient;
 }
 
-module.exports = { getPatient, listPatients, createPatient, updatePatient };
+module.exports = { getPatient, listPatients, createPatient, updatePatient, findOrCreateEmailPatient };

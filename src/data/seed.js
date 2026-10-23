@@ -92,7 +92,7 @@ function buildSeedData() {
   }
 
   return {
-    meta: { nextPatientNumber: patients.length + 1, nextAppointmentNumber: aptNo },
+    meta: { nextDoctorNumber: doctors.length + 1, nextPatientNumber: patients.length + 1, nextAppointmentNumber: aptNo },
     doctors: JSON.parse(JSON.stringify(doctors)),
     patients: JSON.parse(JSON.stringify(patients)),
     slots,

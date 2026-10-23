@@ -4,6 +4,7 @@ const { STATUS } = require('../models/appointment.model');
 const { errors } = require('../utils/errors');
 const { nowIso } = require('../utils/helpers');
 const appointmentService = require('./appointment.service');
+const mailService = require('./mail.service');
 
 function toView(prescription) {
   if (!prescription) return null;
@@ -50,4 +51,18 @@ async function getForAppointment(appointmentId) {
   return toView(record);
 }
 
-module.exports = { create, getForAppointment, toView };
+async function emailForCompletedAppointment(appointmentId) {
+  const appointment = db.data.appointments.find((item) => item.appointmentId === String(appointmentId).toUpperCase());
+  if (!appointment || appointment.status !== STATUS.COMPLETED || appointment.prescriptionEmailSentAt) return false;
+  const patient = db.data.patients.find((item) => item.patientId === appointment.patientId);
+  if (!patient?.email) return false;
+  const prescription = await getForAppointment(appointment.appointmentId);
+  if (!prescription) return false;
+  await mailService.sendPrescription(patient.email, appointmentService.getAppointment(appointment.appointmentId), prescription);
+  appointment.prescriptionEmailSentAt = nowIso();
+  appointment.updatedAt = appointment.prescriptionEmailSentAt;
+  await db.save();
+  return true;
+}
+
+module.exports = { create, getForAppointment, emailForCompletedAppointment, toView };

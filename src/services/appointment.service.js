@@ -21,6 +21,7 @@ function toView(a) {
     doctorId: a.doctorId,
     doctor: doctor.name,
     specialization: doctor.specialization,
+    department: doctor.department,
     hospital: doctor.hospital,
     location: doctor.location,
     slotId: a.slotId,

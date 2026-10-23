@@ -16,6 +16,8 @@ const errors = {
     new AppError(400, 'INVALID_DATE', `"${v}" is not a valid date. Use the format YYYY-MM-DD.`),
   pastAppointmentDate: () =>
     new AppError(400, 'APPOINTMENT_DATE_IN_PAST', 'Appointments can only be booked for today or a future date.'),
+  pastAppointmentTime: () =>
+    new AppError(400, 'APPOINTMENT_TIME_IN_PAST', 'The selected appointment date and time have already passed.'),
   invalidSpecialization: (v, valid) =>
     new AppError(400, 'INVALID_SPECIALIZATION', `"${v}" is not a valid specialization.`, {
       validSpecializations: valid,

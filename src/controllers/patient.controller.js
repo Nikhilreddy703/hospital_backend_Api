@@ -1,10 +1,11 @@
 const patientService = require('../services/patient.service');
 const appointmentService = require('../services/appointment.service');
+const { asyncHandler } = require('../middleware/errorHandler');
 
-exports.create = (req, res) => {
-  const patient = patientService.createPatient(req.body);
+exports.create = asyncHandler(async (req, res) => {
+  const patient = await patientService.createPatient(req.body);
   res.status(201).json({ success: true, message: 'Patient created successfully.', patient });
-};
+});
 
 exports.list = (req, res) => {
   const patients = patientService.listPatients(req.query);

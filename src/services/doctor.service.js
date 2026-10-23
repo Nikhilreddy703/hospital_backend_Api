@@ -1,6 +1,9 @@
 const db = require('../data/db');
 const { errors } = require('../utils/errors');
 const { normalize } = require('../utils/helpers');
+const { nowIso } = require('../utils/helpers');
+const hospital = require('../data/hospital');
+const { validateDoctorProfile } = require('../models/doctor.model');
 
 function publicDoctor(doctor) {
   const { passwordHash, email, phone, accountCreatedAt, ...record } = doctor;
@@ -45,4 +48,29 @@ function findDoctors({ specialization, department, available, name } = {}) {
   return result.map(publicDoctor);
 }
 
-module.exports = { getDoctor, findDoctors, listSpecializations, listDepartments, publicDoctor };
+async function createDoctor(input = {}) {
+  const profile = validateDoctorProfile(input);
+  if (profile.email && db.data.doctors.some((doctor) => doctor.email?.toLowerCase() === profile.email)) {
+    throw errors.conflict('DOCTOR_EMAIL_EXISTS', 'A doctor profile already uses this email address.');
+  }
+  const now = nowIso();
+  const doctor = {
+    doctorId: `DOC${String(await db.allocateDoctorNumber()).padStart(3, '0')}`,
+    ...profile,
+    status: profile.availabilityStatus,
+    hospital: hospital.info.name,
+    createdAt: now,
+    updatedAt: now,
+  };
+  db.data.doctors.push(doctor);
+  try {
+    await db.save();
+  } catch (error) {
+    db.data.doctors = db.data.doctors.filter((item) => item.doctorId !== doctor.doctorId);
+    if (error.code === 11000) throw errors.conflict('DOCTOR_EMAIL_EXISTS', 'A doctor profile already uses this email address.');
+    throw error;
+  }
+  return { ...doctor };
+}
+
+module.exports = { getDoctor, findDoctors, listSpecializations, listDepartments, publicDoctor, createDoctor };

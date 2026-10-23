@@ -90,6 +90,7 @@ async function connect() {
       slots: data.slots.length ? data.slots : seeded.slots,
       appointments: data.appointments.length ? data.appointments : seeded.appointments,
       meta: {
+        nextDoctorNumber: Math.max(0, ...(data.doctors.length ? data.doctors : seeded.doctors).map((doctor) => Number(String(doctor.doctorId).replace(/^DOC/, '')) || 0)) + 1,
         nextPatientNumber: Math.max(0, ...data.patients.map((p) => Number(String(p.patientId).replace(/^PAT/, '')) || 0)) + 1,
         nextAppointmentNumber: Math.max(10000, ...data.appointments.map((a) => Number(String(a.appointmentId).replace(/^APT/, '')) || 0)) + 1,
       },
@@ -122,6 +123,7 @@ async function ensureIndexes() {
     database.collection('staff').createIndex({ email: 1 }, { unique: true, name: 'staff_email_unique' }),
     database.collection('staff').createIndex({ staffId: 1 }, { unique: true, name: 'staff_id_unique' }),
     database.collection('appointments').createIndex({ status: 1, date: 1 }, { name: 'appointments_status_date' }),
+    database.collection('appointment_otps').createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0, name: 'appointment_otp_expiry' }),
   ]);
 }
 
@@ -161,6 +163,26 @@ async function allocateAppointmentNumber() {
     { returnDocument: 'after' }
   );
   state.meta.nextAppointmentNumber = Math.max(state.meta.nextAppointmentNumber || 10001, result.value + 1);
+  return result.value;
+}
+
+async function allocatePatientNumber() {
+  if (!collections || !config.persist) return state.meta.nextPatientNumber++;
+  const counters = database.collection('counters');
+  const initialValue = Math.max(0, (state.meta.nextPatientNumber || 1) - 1);
+  await counters.updateOne({ _id: 'patientNumber' }, { $setOnInsert: { value: initialValue } }, { upsert: true });
+  const result = await counters.findOneAndUpdate({ _id: 'patientNumber' }, { $inc: { value: 1 } }, { returnDocument: 'after' });
+  state.meta.nextPatientNumber = Math.max(state.meta.nextPatientNumber || 1, result.value + 1);
+  return result.value;
+}
+
+async function allocateDoctorNumber() {
+  if (!collections || !config.persist) return state.meta.nextDoctorNumber++;
+  const counters = database.collection('counters');
+  const initialValue = Math.max(0, (state.meta.nextDoctorNumber || 1) - 1);
+  await counters.updateOne({ _id: 'doctorNumber' }, { $setOnInsert: { value: initialValue } }, { upsert: true });
+  const result = await counters.findOneAndUpdate({ _id: 'doctorNumber' }, { $inc: { value: 1 } }, { returnDocument: 'after' });
+  state.meta.nextDoctorNumber = Math.max(state.meta.nextDoctorNumber || 1, result.value + 1);
   return result.value;
 }
 
@@ -286,6 +308,8 @@ module.exports = {
   isConnected,
   reserveSlot,
   allocateAppointmentNumber,
+  allocatePatientNumber,
+  allocateDoctorNumber,
   get data() {
     return load();
   },

@@ -3,6 +3,9 @@ const config = require('./utils/config');
 const db = require('./data/db');
 const doctorLeaveService = require('./services/doctorLeave.service');
 const slotService = require('./services/slot.service');
+const prescriptionService = require('./services/prescription.service');
+const mailService = require('./services/mail.service');
+const appointmentService = require('./services/appointment.service');
 
 async function start() {
   await db.connect();
@@ -19,6 +22,22 @@ async function start() {
   const processPastAppointments = async () => {
     try {
       const processed = await db.completePastAppointments();
+      for (const appointment of db.data.appointments.filter((item) => item.confirmationEmailPending)) {
+        const patient = db.data.patients.find((item) => item.patientId === appointment.patientId);
+        const doctor = db.data.doctors.find((item) => item.doctorId === appointment.doctorId);
+        if (!patient?.email || !doctor) continue;
+        try {
+          const view = appointmentService.getAppointment(appointment.appointmentId);
+          await mailService.sendAppointmentConfirmation(patient.email, { ...view, patientName: patient.name, department: doctor.department });
+          appointment.confirmationEmailPending = false;
+          appointment.confirmationEmailSentAt = new Date().toISOString();
+          await db.save();
+        } catch (error) { console.error('Appointment confirmation email will retry later:', error.message); }
+      }
+      for (const appointment of db.data.appointments.filter((item) => item.status === 'COMPLETED' && item.prescriptionId && !item.prescriptionEmailSentAt)) {
+        try { await prescriptionService.emailForCompletedAppointment(appointment.appointmentId); }
+        catch (error) { console.error('Completed appointment prescription email will retry later:', error.message); }
+      }
       if (processed) console.log(`Processed ${processed} past appointment(s).`);
     } catch (error) {
       console.error('Past-appointment processing will retry later:', error.message);

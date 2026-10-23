@@ -42,7 +42,8 @@ Example registration (send the key in the request header, never in the JSON body
 
 | Method | Endpoint | Auth | Purpose |
 |---|---|---|---|
-| POST | `/appointments` | None (existing patient booking flow) | Book using `patientId`, `doctorId`, and either `slotId` or `date` + `time` |
+| POST | `/appointments` | None | Request an email OTP using patient name, email, department, doctor name, date, time, and optional reason |
+| POST | `/appointments/confirm` | None | Verify `{ email, otp }`, create the appointment, and email its confirmation |
 | GET | `/appointments/{appointmentId}` | Appointment ID (existing tracking flow) | Read appointment, check-in, consultation, and prescription details |
 | GET | `/appointments/{appointmentId}/status` | Appointment ID | Read current appointment status |
 | POST | `/appointments/{appointmentId}/check-in` | Appointment ID | Patient check-in on the appointment date; server timestamps it |
@@ -55,19 +56,19 @@ Example registration (send the key in the request header, never in the JSON body
 | GET | `/patients/{patientId}/appointments` | Existing patient API | List appointments; optional `status` filter |
 | GET | `/patients/{patientId}/context` | Existing patient API | Return confirmed, cancelled, and completed appointment groups |
 
-Booking example using the existing slot ID:
+Request a booking OTP (the doctor is matched by exact name within the given department; time accepts `HH:mm` or `h:mm AM/PM`):
 
 ```json
-{ "patientId": "PAT001", "doctorId": "DOC001", "slotId": "S0026", "reason": "Check-up" }
+{ "name": "Neha Demo", "email": "neha@example.com", "department": "Heart & Vascular", "doctorName": "Dr. Rahul Sharma", "date": "2026-10-20", "time": "10:30 AM", "reason": "Check-up" }
 ```
 
-Booking by date/time is also supported:
+The API returns `202 Accepted` and sends a six-digit email OTP that expires in ten minutes. The email can request another code after 60 seconds. Confirm the booking with:
 
 ```json
-{ "patientId": "PAT001", "doctorId": "DOC001", "date": "2026-10-20", "time": "10:30 AM" }
+{ "email": "neha@example.com", "otp": "123456" }
 ```
 
-The backend atomically reserves a MongoDB slot. It rejects dates in the past, booked slots, inactive/unavailable doctors, and dates covered by active doctor leave. Patient check-in is stored inside the existing appointment document. Starting consultation requires the patient to be checked in and the assigned doctor to have an active attendance check-in. Completion requires `IN_CONSULTATION`.
+Only after OTP verification does the backend create an internal patient record and appointment; users do not need to create or log in to a patient account. It rejects booked slots, inactive/unavailable doctors, and dates covered by active doctor leave. A confirmation email is sent after booking. Patient check-in is stored inside the appointment document. Starting consultation requires patient check-in and the assigned doctor's active attendance check-in. Completion requires `IN_CONSULTATION`. If a prescription is present when the doctor completes the consultation, it is emailed to the patient's verified address; if added afterward, it is emailed then. SMS is not enabled by this flow.
 
 Prescription request:
 
@@ -99,7 +100,7 @@ Indexes are created idempotently at startup: unique doctor/patient/appointment/s
 
 ## Environment
 
-Required in Render/service environment:
+Required in Render/service environment (email OTP booking also requires the SMTP values):
 
 ```text
 MONGODB_URI=...
@@ -108,6 +109,12 @@ JWT_EXPIRES_IN=8h
 DOCTOR_REGISTRATION_KEY=<separate administrator-held secret>
 CORS_ORIGIN=https://your-frontend.example
 PORT=<provided by Render>
+SMTP_HOST=<your SMTP server>
+SMTP_PORT=587
+SMTP_SECURE=false
+SMTP_USER=<SMTP username>
+SMTP_PASSWORD=<SMTP password>
+MAIL_FROM=<verified sender address>
 ```
 
 `CORS_ORIGIN` accepts a comma-separated list. Local development defaults to `http://localhost:3000,http://localhost:5173`. `.env` is not committed. `ENABLE_ADMIN_RESET` defaults to false; if explicitly enabled, a separate `ADMIN_RESET_TOKEN` is required in `x-admin-reset-token`.
@@ -134,7 +141,24 @@ All `/api/admin` routes require ADMIN:
 - `GET /api/admin/analytics?startDate=YYYY-MM-DD&endDate=YYYY-MM-DD` — status, doctor, specialization and daily appointment summaries, and slot utilization.
 - `GET /api/admin/appointments` — appointment listing; supports `date`, `status`, `doctorId`, `appointmentId`, `patient`, `page`, and `limit`.
 - `GET /api/admin/doctors`, `/doctors/availability?date=YYYY-MM-DD`, `/doctors/on-leave`, `/staff`.
+- `POST /api/admin/doctors` — ADMIN-only doctor profile creation. The server generates `doctorId` and starts the profile as `AVAILABLE` unless `availabilityStatus` or `status` is `OFFLINE`. Required: `name`, `specialization`, `department`. Optional: `doctorType`, `experienceYears` (or `experience`), `consultationFee`, `currency`, `location`, `phone`, `email`, `availabilityStatus`, and `isActive`. An email can later be used to register the doctor's login with `/api/doctors/register` and the registration key.
 - `POST /api/admin/doctors/:doctorId/leave` — `{ "startDate": "YYYY-MM-DD", "endDate": "YYYY-MM-DD", "reason": "..." }`. Returns 409 with conflicting appointment references instead of creating leave when scheduled appointments overlap.
+
+Example profile request:
+
+```json
+{
+  "name": "Dr. Anika Rao",
+  "specialization": "Cardiology",
+  "department": "Heart & Vascular",
+  "experienceYears": 8,
+  "consultationFee": 750,
+  "currency": "INR",
+  "location": "Block A, Floor 1, Room 103",
+  "phone": "+91 9000000013",
+  "email": "anika.rao@example.com"
+}
+```
 
 ## Reception
 

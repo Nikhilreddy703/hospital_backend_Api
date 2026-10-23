@@ -163,8 +163,10 @@ curl "http://localhost:3000/api/doctors/DOC001/slots?date=2026-10-10"
 ```bash
 curl -X POST http://localhost:3000/api/appointments \
   -H "Content-Type: application/json" \
-  -d '{"patientId":"PAT001","doctorId":"DOC001","slotId":"S0026","reason":"Chest discomfort"}'
+  -d '{"name":"Neha Demo","email":"neha@example.com","department":"Heart & Vascular","doctorName":"Dr. Rahul Sharma","date":"2026-10-20","time":"10:30 AM","reason":"Chest discomfort"}'
 ```
+
+The API emails a six-digit OTP. Confirm it with `POST /api/appointments/confirm` and body `{"email":"neha@example.com","otp":"123456"}`. Configure SMTP first; see `.env.example`.
 
 ```json
 {
@@ -224,7 +226,8 @@ curl -X POST http://localhost:3000/api/patients -H "Content-Type: application/js
 
 - **Typical chatbot flow:** `GET /api/specializations` → `GET /api/doctors?specialization=` →
   `GET /api/doctors/{id}/available-dates` → `GET /api/doctors/{id}/slots?date=` →
-  `POST /api/patients` (or `GET /api/patients?phone=`) → `POST /api/appointments`.
+  `GET /api/departments` → `GET /api/doctors?department=` → `GET /api/doctors/{id}/slots?date=` →
+  `POST /api/appointments` (request email OTP) → `POST /api/appointments/confirm`.
 - **Lookup / manage:** `GET /api/patients/{id}/appointments`, `GET /api/appointments/{id}/status`,
   `PUT .../reschedule`, `DELETE /api/appointments/{id}`.
 - **Branching on errors:** the chatbot should branch on `errorCode` (stable), not on `message` (human readable).

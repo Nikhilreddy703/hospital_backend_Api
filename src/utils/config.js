@@ -23,4 +23,10 @@ module.exports = {
   seedDays: parseInt(process.env.SEED_DAYS || '14', 10),
   enableAdminReset: process.env.ENABLE_ADMIN_RESET === 'true',
   adminResetToken: process.env.ADMIN_RESET_TOKEN || '',
+  smtpHost: process.env.SMTP_HOST || '',
+  smtpPort: parseInt(process.env.SMTP_PORT || '587', 10),
+  smtpSecure: process.env.SMTP_SECURE === 'true',
+  smtpUser: process.env.SMTP_USER || '',
+  smtpPassword: process.env.SMTP_PASSWORD || '',
+  mailFrom: process.env.MAIL_FROM || process.env.SMTP_USER || '',
 };
